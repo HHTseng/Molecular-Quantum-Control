@@ -57,25 +57,57 @@ $$
 
 `RLQLSEnv.step(a)` samples $k\sim\mathrm{Categorical}(p_0,p_1)$. `branch_details(s,a)` returns both branches for qMDP learning.
 
-### Blackbody-radiation propagation
+### Thermal open-system dynamics from blackbody radiation
 
-For rates $R_{i\to j}$ and column populations,
+Blackbody photons drive incoherent absorption, stimulated emission, and spontaneous emission between molecular eigenstates. For transition frequency $\omega_{ij}$, the thermal photon occupation is
 
 $$
-\dot s=G_{\mathrm{BBR}}s,
+\bar n(\omega_{ij},T)
+=\frac{1}{e^{\hbar\omega_{ij}/(k_BT)}-1}.
+$$
+
+Upward rates scale with $\bar n$; downward rates contain stimulated and spontaneous contributions proportional to $\bar n+1$. After coherences are removed, the populations obey the Pauli master equation
+
+$$
+\dot s_i
+=\sum_{j\neq i}\left(R_{j\to i}s_j-R_{i\to j}s_i\right),
 \qquad
+\dot s=G_{\mathrm{BBR}}s.
+$$
+
+For column populations,
+
+$$
 G_{ji}=R_{i\to j}\;(j\neq i),
 \qquad
 G_{ii}=-\sum_{j\neq i}R_{i\to j}.
 $$
 
-The optional action-dependent noise step is
+Hence $\mathbf 1^TG_{\mathrm{BBR}}=0$, so total probability is conserved. Thermal detailed balance gives
+
+$$
+R_{i\to j}s_i^{\mathrm{eq}}
+=R_{j\to i}s_j^{\mathrm{eq}},
+\qquad
+s_i^{\mathrm{eq}}\propto e^{-E_i/(k_BT)},
+$$
+
+making the Boltzmann population stationary. During a pulse of duration $\tau_a$, the optional noise map is applied after the conditioned measurement branch:
 
 $$
 s'_{a,k}=T_{\mathrm{BBR}}(\tau_a)s_{a,k}^{\mathrm{cond}},
 \qquad
 T_{\mathrm{BBR}}(\tau_a)=e^{G_{\mathrm{BBR}}\tau_a}.
 $$
+
+The implementation also provides the paper-style discretization
+
+$$
+T_{\mathrm{BBR}}(\tau_a)
+\approx\left(I+G_{\mathrm{BBR}}\,\delta t\right)^{\tau_a/\delta t},
+$$
+
+followed by numerical clipping and column normalization to preserve a stochastic population map.
 
 ## Control objective
 
