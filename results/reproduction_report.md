@@ -29,7 +29,7 @@ This gap is attributable primarily to missing physics inputs, not merely to the 
 Let
 
 $$
-\mathcal H_{\mathrm{mol}}=\operatorname{span}\{|i\rangle:i=1,\ldots,N_S\}
+\mathcal H_{\mathrm{mol}}=\mathrm{span}\{|i\rangle:i=1,\ldots,N_S\}
 $$
 
 and let the inter-step state be the diagonal molecular population

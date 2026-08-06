@@ -24,7 +24,7 @@ The qMDP algorithm needs more information than the standard Gymnasium `step()` r
 Let
 
 $$
-\mathcal H_{\mathrm{mol}} = \operatorname{span}\{|i\rangle : i=1,\ldots,N_S\},
+\mathcal H_{\mathrm{mol}} = \mathrm{span}\{|i\rangle : i=1,\ldots,N_S\},
 $$
 
 where $|i\rangle$ is a molecular eigenstate. Between pulse-measurement steps, the paper assumes that motional cooling destroys the relevant coherences. The RL observation is therefore the population vector
@@ -144,7 +144,7 @@ $$
 \max_i s_i \ge 1-\eta.
 $$
 
-The paper sometimes calls $\eta$ the "purity threshold," although the implemented condition is a maximum-population/confidence threshold, not $\operatorname{tr}(\rho^2)$.
+The paper sometimes calls $\eta$ the "purity threshold," although the implemented condition is a maximum-population/confidence threshold, not $\mathrm{Tr}(\rho^2)$.
 
 ### 2.7 Reward
 
@@ -1119,4 +1119,3 @@ Useful nearby references are:
 | Soft target update | Supplemental Sec. SD parameter $\tau$ |
 | Greedy testing | Main text discussion of Fig. 2(c) |
 | BBR sequential propagation | Supplemental Sec. SB |
-

@@ -55,7 +55,7 @@ p_k(s,a)=\mathbf 1^T\widetilde s_{a,k},
 s_{a,k}^{\mathrm{cond}}=\frac{\widetilde s_{a,k}}{p_k(s,a)}.
 $$
 
-`RLQLSEnv.step(a)` samples $k\sim\operatorname{Categorical}(p_0,p_1)$. `branch_details(s,a)` returns both branches for qMDP learning.
+`RLQLSEnv.step(a)` samples $k\sim\mathrm{Categorical}(p_0,p_1)$. `branch_details(s,a)` returns both branches for qMDP learning.
 
 ### Blackbody-radiation propagation
 
