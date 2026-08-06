@@ -1,0 +1,17 @@
+paper_pulse,source_index,target_index,transfer_probability,note
+1,10,9,0.89,XI -> X
+2,9,8,0.99,X -> IX
+3,8,7,0.94,IX -> VIII
+3,2,1,0.85,"III -> II (secondary, approximate)"
+4,7,6,0.85,VIII -> VII
+4,1,0,0.95,"II -> I (secondary, approximate)"
+5,6,11,1.0,VII -> XII
+6,0,5,1.0,I -> VI
+7,15,14,0.99,XVI -> XV
+8,14,13,0.97,XV -> XIV
+9,13,12,0.74,XIV -> XIII
+9,5,4,0.9,"VI -> V (secondary, approximate)"
+10,3,4,1.0,IV -> V
+11,4,3,1.0,V -> IV
+12,11,12,1.0,XII -> XIII
+13,12,11,1.0,XIII -> XII

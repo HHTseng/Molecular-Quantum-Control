@@ -1,0 +1,60 @@
+{
+  "training": {
+    "episodes": 1000,
+    "last100_mean_length": 8.95,
+    "last100_success_rate": 1.0,
+    "total_environment_steps": 11612,
+    "optimizer_steps": 2872
+  },
+  "rl": {
+    "episodes": 3000,
+    "success_rate": 1.0,
+    "mean_successful_length": 8.428333333333333,
+    "mean_censored_length": 8.428333333333333,
+    "median_censored_length": 8.0,
+    "completion_fraction": {
+      "2": 0.12733333333333333,
+      "3": 0.19533333333333333,
+      "4": 0.253,
+      "5": 0.32233333333333336,
+      "6": 0.32233333333333336,
+      "7": 0.49666666666666665,
+      "8": 0.5483333333333333,
+      "18": 0.978
+    }
+  },
+  "sweeping": {
+    "episodes": 3000,
+    "success_rate": 1.0,
+    "mean_successful_length": 8.790333333333333,
+    "mean_censored_length": 8.790333333333333,
+    "median_censored_length": 7.0,
+    "completion_fraction": {
+      "2": 0.11466666666666667,
+      "3": 0.11466666666666667,
+      "4": 0.11466666666666667,
+      "5": 0.383,
+      "6": 0.45,
+      "7": 0.505,
+      "8": 0.558,
+      "18": 0.957
+    }
+  },
+  "information_gain_diagnostic": {
+    "episodes": 1000,
+    "success_rate": 0.739,
+    "mean_successful_length": 6.949932341001353,
+    "mean_censored_length": 31.236,
+    "median_censored_length": 9.0,
+    "completion_fraction": {
+      "2": 0.0,
+      "3": 0.166,
+      "4": 0.24,
+      "5": 0.306,
+      "6": 0.368,
+      "7": 0.428,
+      "8": 0.486,
+      "18": 0.738
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "training_last100_mean_length": 9.03,
+  "training_last100_success": 1.0,
+  "evaluation": {
+    "episodes": 2000,
+    "success_rate": 1.0,
+    "mean_successful_length": 7.789,
+    "mean_censored_length": 7.789,
+    "median_censored_length": 7.0,
+    "completion_fraction": {
+      "2": 0.055,
+      "3": 0.1665,
+      "4": 0.3325,
+      "5": 0.3325,
+      "6": 0.395,
+      "7": 0.545,
+      "8": 0.614,
+      "18": 0.981
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "training": {
+    "episodes": 300,
+    "last100_mean_length": 91.54,
+    "last100_success_rate": 0.48,
+    "total_environment_steps": 29089,
+    "optimizer_steps": 3621
+  },
+  "rl": {
+    "episodes": 300,
+    "success_rate": 0.38,
+    "mean_successful_length": 4.114035087719298,
+    "mean_censored_length": 94.56333333333333,
+    "median_censored_length": 150.0,
+    "completion_fraction": {
+      "10": 0.38,
+      "30": 0.38,
+      "62": 0.38,
+      "100": 0.38,
+      "150": 0.38
+    }
+  },
+  "sweeping": {
+    "episodes": 300,
+    "success_rate": 0.2966666666666667,
+    "mean_successful_length": 100.30337078651685,
+    "mean_censored_length": 135.25666666666666,
+    "median_censored_length": 150.0,
+    "completion_fraction": {
+      "10": 0.0,
+      "30": 0.0,
+      "62": 0.02,
+      "100": 0.17666666666666667,
+      "150": 0.2966666666666667
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "episodes": 1000,
+  "hidden_sizes": [128, 128, 128],
+  "learning_rate": 0.0005,
+  "gamma": 1.0,
+  "target_tau": 0.001,
+  "batch_size": 64,
+  "warmup_transitions": 128,
+  "train_every_steps": 4,
+  "epsilon_start": 1.0,
+  "epsilon_end": 0.005,
+  "epsilon_decay_fraction": 0.3,
+  "update_mode": "qmdp",
+  "seed": 7
+}
