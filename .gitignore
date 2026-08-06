@@ -17,3 +17,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Local derivation / workflow notes (not part of the public repository)
+PSEUDOCODE_REFERENCE.md
+RL_MDP_WORKFLOW_WALKTHROUGH.md
