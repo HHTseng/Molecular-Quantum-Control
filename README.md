@@ -204,6 +204,37 @@ python scripts/run_experiment.py \
 
 Use `--update-mode qmdp` for the expected-branch target or `--update-mode sampled` for ordinary sampled Double DQN.
 
+## Experimental results
+
+The checked-in experiments evaluate greedy policies from a 300 K Boltzmann initial population with a 99% preparation threshold. Episode lengths include unsuccessful runs at the environment time limit (100 pulses for CaH$^+$ and 150 for H$_3$O$^+$). The following values come from the JSON files in [`results/`](results/); they are results for the reconstructed surrogate environments, not simulations from the unpublished pulse matrices used by the paper.
+
+| System and policy | Training | Evaluation | Success | Mean pulses | Completion at reference horizon |
+|---|---:|---:|---:|---:|---:|
+| CaH$^+$ qMDP DDQN, seed 7 | 1,000 episodes | 3,000 episodes | 100% | 8.43 | 54.8% by 8; 97.8% by 18 |
+| CaH$^+$ pulse sweeping | -- | 3,000 episodes | 100% | 8.79 | 55.8% by 8; 95.7% by 18 |
+| H$_3$O$^+$ qMDP DDQN, four-motion surrogate | 100 episodes | 200 episodes | 12% | 132.24 censored | 12% by 62 and 150 |
+| H$_3$O$^+$ pulse sweeping, four-motion surrogate | -- | 200 episodes | 36% | 132.46 censored | 1% by 62; 36% by 150 |
+
+### CaH$^+$ analysis
+
+Across qMDP seeds 3, 5, and 7, the greedy mean episode lengths were 8.251, 8.842, and 8.428 pulses, respectively, or $8.51\pm0.30$ pulses (mean $\pm$ sample standard deviation). This is 2.5% above the paper's reported mean of 8.3 pulses. Mean completion was $53.7\%\pm2.6\%$ by 8 pulses and $97.76\%\pm0.14\%$ by 18 pulses, compared with 56% and 99% in the paper.
+
+The close mean and late-horizon completion show that the reduced model captures the overall difficulty of CaH$^+$ preparation. It does not reproduce the early-time distribution: the surrogate has 9.8% mean completion after only two pulses, whereas the paper reports 0%. The dominant-edge reconstruction omits weak and off-resonant channels, allowing some measurement branches to identify a molecular destination too cleanly. Sweeping is also easier here than in the paper (8.79 versus 9.7 mean pulses), so the reconstructed RL advantage over sweeping is modest and should not be interpreted as a faithful policy-performance gap.
+
+![CaH training curves](results/figures/cah_training.png)
+
+![CaH cumulative completion](results/figures/cah_completion.png)
+
+### H$_3$O$^+$ analysis
+
+The more paper-faithful H$_3$O$^+$ surrogate retains four motional states but reaches only 12% greedy completion by 62 pulses, far below the paper's 80%; its success fraction remains at 12% through the 150-pulse limit. Successful RL trajectories finish in about two pulses while most trajectories time out. This lottery-like split indicates a few nearly pure branches rather than the connected, informative action graph needed for robust cooling. Pulse sweeping reaches 36% by 150 pulses and therefore outperforms the learned policy on this reconstruction.
+
+This negative result localizes the main reproduction limitation to the physics inputs. The published state and Raman-transition tables do not uniquely specify the exact 218 pulse definitions, pulse-conditioned branch matrices, weak off-resonant couplings, or multilevel interference. A less faithful binary-motion sensitivity model reaches 38% completion, further showing that the result is highly dependent on reconstruction assumptions rather than DQN training alone. See [`results/reproduction_report.md`](results/reproduction_report.md) for the run configurations, seed-level data, paper comparisons, and uncertainty analysis.
+
+![H3O training curves](results/figures/h3o_training.png)
+
+![H3O cumulative completion](results/figures/h3o_completion.png)
+
 ## Verification
 
 ```bash
