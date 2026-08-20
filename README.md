@@ -9,7 +9,7 @@ This repository implements and extends the control framework of:
 It contains two compatible layers:
 
 1. the original single-molecule Gymnasium/Double-DQN/qMDP reconstruction for
-   CaH^+ or H_3O^+;
+   CaH$^+$ or H$_3$O$^+$;
 2. a new multi-task extension in which molecule-specific MDPs share one
    chemistry-conditioned, variable-action GNN Q-function.
 
@@ -31,30 +31,30 @@ Matplotlib. The optional `physics` extra installs QuTiP.
 
 ## Multi-molecule task family
 
-For molecule m, the state and local action set are
+For molecule $m$, the state and local action set are
 
-
+$$
 s^{(m)}\in\Delta_{N_m-1},
 \qquad
 \mathcal A_m=\{0,\ldots,A_m-1\}.
-
+$$
 
 The quantum transition model remains molecule specific:
 
-
+$$
 q_k^{(m)}=B_{a,k}^{(m)}s,
 \qquad
 p_m(k\mid s,a)=\mathbf 1^{\mathsf T}q_k^{(m)},
 \qquad
 s'_k=\frac{q_k^{(m)}}{p_m(k\mid s,a)}.
-
+$$
 
 One shared GNN scores each molecule's valid pulse candidates:
 
-
+$$
 Q_\Theta(o_m,a),
 \qquad a\in\mathcal A_m.
-
+$$
 
 Padding provides fixed tensors for batching; an action mask ensures that the
 agent never selects pulse slots outside the local library.
@@ -63,12 +63,12 @@ The default demonstration registry contains:
 
 | task | states | actions | status |
 |---|---:|---:|---|
-| CaH^+ | 16 | 13 | existing reconstruction, source |
-| MgH^+ | 16 | 13 | related-task transfer surrogate |
-| H_3O^+ | 130 | 218 | existing reconstruction, source |
-| D_3O^+ | 130 | 218 | related isotopologue transfer surrogate |
+| CaH$^+$ | 16 | 13 | existing reconstruction, source |
+| MgH$^+$ | 16 | 13 | related-task transfer surrogate |
+| H$_3$O$^+$ | 130 | 218 | existing reconstruction, source |
+| D$_3$O$^+$ | 130 | 218 | related isotopologue transfer surrogate |
 
-MgH^+ and D_3O^+ validate the transfer software path. They are not
+MgH$^+$ and D$_3$O$^+$ validate the transfer software path. They are not
 independently calculated molecular spectra.
 
 ## Main commands
@@ -120,11 +120,11 @@ PYTHONPATH=src python scripts/validate_transfer_suite.py \
 
 ### Physics and Gym environment
 
-- `src/rlqls/model.py`: molecule-specific branch maps B_{a,k}.
+- `src/rlqls/model.py`: molecule-specific branch maps $B_{a,k}$.
 - `src/rlqls/multitask/task.py`: one molecular MDP plus transferable metadata.
 - `src/rlqls/multitask/registry.py`: extensible molecule registry.
 - `src/rlqls/multitask/env.py`: integrated Gymnasium environment and masks.
-- `src/rlqls/multitask/builders.py`: CaH^+/H_3O^+ sources and related targets.
+- `src/rlqls/multitask/builders.py`: CaH$^+$/H$_3$O$^+$ sources and related targets.
 
 ### Graph observation and chemistry
 
@@ -137,7 +137,7 @@ PYTHONPATH=src python scripts/validate_transfer_suite.py \
 - `src/rlqls/gnn/chemistry_encoder.py`: atom/isotope message passing.
 - `src/rlqls/gnn/spectroscopy_encoder.py`: chemistry-conditioned level GNN.
 - `src/rlqls/gnn/pulse_scorer.py`: variable-cardinality pulse/hyperedge scorer.
-- `src/rlqls/gnn/q_network.py`: shared Q_\Theta(o_m,a).
+- `src/rlqls/gnn/q_network.py`: shared $Q_\Theta(o_m,a)$.
 - `src/rlqls/multitask/replay.py`: task-balanced replay.
 - `src/rlqls/multitask/qmdp.py`: heterogeneous expected-branch target.
 - `src/rlqls/multitask/trainer.py`: shared Double-DQN/qMDP training.
@@ -147,7 +147,7 @@ PYTHONPATH=src python scripts/validate_transfer_suite.py \
 - [`MULTI_MOLECULE_GNN_RLQLS_WALKTHROUGH.md`](MULTI_MOLECULE_GNN_RLQLS_WALKTHROUGH.md): detailed code and mathematical walkthrough.
 - [`results/multimolecule_transfer_final/TRANSFER_RESULTS.md`](results/multimolecule_transfer_final/TRANSFER_RESULTS.md): supplied transfer experiment and limitations.
 - [`RL_MDP_WORKFLOW_WALKTHROUGH.md`](RL_MDP_WORKFLOW_WALKTHROUGH.md): original single-molecule workflow.
-- [`results/reproduction_report.md`](results/reproduction_report.md): original CaH^+/H_3O^+ reconstruction assessment.
+- [`results/reproduction_report.md`](results/reproduction_report.md): original CaH$^+$/H$_3$O$^+$ reconstruction assessment.
 
 ## Verification
 
@@ -164,4 +164,4 @@ training, and a terminal-reachability diagnostic for the related surrogates.
 The exact pulse-conditioned matrices used by the paper are not public. The
 provided source environments therefore remain reconstructions. The new
 multi-molecule transfer experiment validates the architecture and learning
-workflow; it is not evidence for quantitative MgH^+ or D_3O^+ control.
+workflow; it is not evidence for quantitative MgH$^+$ or D$_3$O$^+$ control.
