@@ -9,7 +9,7 @@ This repository implements and extends the control framework of:
 It contains two compatible layers:
 
 1. the original single-molecule Gymnasium/Double-DQN/qMDP reconstruction for
-   CaH$^+$ or H$_3$O$^+$;
+   CaH+ or H3O+;
 2. a new multi-task extension in which molecule-specific MDPs share one
    chemistry-conditioned, variable-action GNN Q-function.
 
@@ -63,12 +63,12 @@ The default demonstration registry contains:
 
 | task | states | actions | status |
 |---|---:|---:|---|
-| CaH$^+$ | 16 | 13 | existing reconstruction, source |
-| MgH$^+$ | 16 | 13 | related-task transfer surrogate |
-| H$_3$O$^+$ | 130 | 218 | existing reconstruction, source |
-| D$_3$O$^+$ | 130 | 218 | related isotopologue transfer surrogate |
+| CaH+ | 16 | 13 | existing reconstruction, source |
+| MgH+ | 16 | 13 | related-task transfer surrogate |
+| H3O+ | 130 | 218 | existing reconstruction, source |
+| D3O+ | 130 | 218 | related isotopologue transfer surrogate |
 
-MgH$^+$ and D$_3$O$^+$ validate the transfer software path. They are not
+MgH+ and D3O+ validate the transfer software path. They are not
 independently calculated molecular spectra.
 
 ## Main commands
@@ -124,7 +124,7 @@ PYTHONPATH=src python scripts/validate_transfer_suite.py \
 - `src/rlqls/multitask/task.py`: one molecular MDP plus transferable metadata.
 - `src/rlqls/multitask/registry.py`: extensible molecule registry.
 - `src/rlqls/multitask/env.py`: integrated Gymnasium environment and masks.
-- `src/rlqls/multitask/builders.py`: CaH$^+$/H$_3$O$^+$ sources and related targets.
+- `src/rlqls/multitask/builders.py`: CaH+/H3O+ sources and related targets.
 
 ### Graph observation and chemistry
 
@@ -147,7 +147,7 @@ PYTHONPATH=src python scripts/validate_transfer_suite.py \
 - [`MULTI_MOLECULE_GNN_RLQLS_WALKTHROUGH.md`](MULTI_MOLECULE_GNN_RLQLS_WALKTHROUGH.md): detailed code and mathematical walkthrough.
 - [`results/multimolecule_transfer_final/TRANSFER_RESULTS.md`](results/multimolecule_transfer_final/TRANSFER_RESULTS.md): supplied transfer experiment and limitations.
 - [`RL_MDP_WORKFLOW_WALKTHROUGH.md`](RL_MDP_WORKFLOW_WALKTHROUGH.md): original single-molecule workflow.
-- [`results/reproduction_report.md`](results/reproduction_report.md): original CaH$^+$/H$_3$O$^+$ reconstruction assessment.
+- [`results/reproduction_report.md`](results/reproduction_report.md): original CaH+/H3O+ reconstruction assessment.
 
 ## Verification
 
@@ -164,4 +164,4 @@ training, and a terminal-reachability diagnostic for the related surrogates.
 The exact pulse-conditioned matrices used by the paper are not public. The
 provided source environments therefore remain reconstructions. The new
 multi-molecule transfer experiment validates the architecture and learning
-workflow; it is not evidence for quantitative MgH$^+$ or D$_3$O$^+$ control.
+workflow; it is not evidence for quantitative MgH+ or D3O+ control.
