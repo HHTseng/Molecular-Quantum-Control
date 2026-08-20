@@ -21,3 +21,5 @@ __pycache__/
 # Local derivation / workflow notes (not part of the public repository)
 PSEUDOCODE_REFERENCE.md
 RL_MDP_WORKFLOW_WALKTHROUGH.md
+MULTI_MOLECULE_GNN_RLQLS_WALKTHROUGH.md
+multi_molecule_RL_QLS_plan_and_design/

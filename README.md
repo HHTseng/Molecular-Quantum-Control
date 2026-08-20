@@ -1,169 +1,21 @@
-# RL-QLS: reinforcement learning for molecular quantum control
+# Multi-Molecule GNN RL-QLS
 
-Implementation of A. Pipi *et al.*, **Molecular Quantum Control Algorithm Design by Reinforcement Learning**, arXiv:2410.11839v5 / *Physical Review Research* **8**, 033103 (2026).
+This repository implements and extends the control framework of:
 
-The repository separates:
+> A. Pipi, X. Tao, A. Wu, P. Narang, and D. R. Leibrandt,
+> **Molecular Quantum Control Algorithm Design by Reinforcement Learning**,
+> arXiv:2410.11839v5 / *Physical Review Research* **8**, 033103 (2026).
 
-- the control layer: population-state Gymnasium environment, sampled Double DQN, and expected-branch quantum-MDP (qMDP) Double DQN;
-- the physics layer: reconstructed CaH$^+$ and H$_3$O$^+$ pulse maps. These are approximate because the paper does not publish its full Hamiltonians or pulse-conditioned matrices.
+It contains two compatible layers:
 
-## Physics model
+1. the original single-molecule Gymnasium/Double-DQN/qMDP reconstruction for
+   CaH$^+$ or H$_3$O$^+$;
+2. a new multi-task extension in which molecule-specific MDPs share one
+   chemistry-conditioned, variable-action GNN Q-function.
 
-### Molecular state
-
-After each measurement/cooling cycle, coherences are discarded and the molecular state is represented by populations
-
-$$
-s=(s_1,\ldots,s_{N_S})^T\in\Delta_{N_S-1},
-\qquad s_i\geq0,
-\qquad \mathbf 1^Ts=1.
-$$
-
-The default initial state is thermal:
-
-$$
-s_{0,i}=\frac{e^{-E_i/(k_BT)}}{Z},
-\qquad
-Z=\sum_j e^{-E_j/(k_BT)}.
-$$
-
-### Pulse and projective measurement
-
-Action $a\in\{0,\ldots,N_A-1\}$ selects a Raman-sideband pulse. Its joint molecule-motion propagator is
-
-$$
-U_a=\mathcal T\exp\!\left[-\frac{i}{\hbar}\int_0^{\tau_a}H_a(t)\,dt\right].
-$$
-
-The motional measurement is binary: $k=0$ for $n=0$ and $k=1$ for $n\geq1$. Precomputed branch matrices are
-
-$$
-(B_{a,k})_{ji}
-=\sum_{n\in\mathcal N_k}
-\left|\langle j,n|U_a|i,0\rangle\right|^2,
-\qquad
-\sum_{k,j}(B_{a,k})_{ji}=1.
-$$
-
-For population $s$:
-
-$$
-\widetilde s_{a,k}=B_{a,k}s,
-\qquad
-p_k(s,a)=\mathbf 1^T\widetilde s_{a,k},
-\qquad
-s_{a,k}^{\mathrm{cond}}=\frac{\widetilde s_{a,k}}{p_k(s,a)}.
-$$
-
-`RLQLSEnv.step(a)` samples $k\sim\mathrm{Categorical}(p_0,p_1)$. `branch_details(s,a)` returns both branches for qMDP learning.
-
-### Thermal open-system dynamics from blackbody radiation
-
-Blackbody photons drive incoherent absorption, stimulated emission, and spontaneous emission between molecular eigenstates. For transition frequency $\omega_{ij}$, the thermal photon occupation is
-
-$$
-\bar n(\omega_{ij},T)
-=\frac{1}{e^{\hbar\omega_{ij}/(k_BT)}-1}.
-$$
-
-Upward rates scale with $\bar n$; downward rates contain stimulated and spontaneous contributions proportional to $\bar n+1$. After coherences are removed, the populations obey the Pauli master equation
-
-$$
-\dot s_i
-=\sum_{j\neq i}\left(R_{j\to i}s_j-R_{i\to j}s_i\right),
-\qquad
-\dot s=G_{\mathrm{BBR}}s.
-$$
-
-For column populations,
-
-$$
-G_{ji}=R_{i\to j}\;(j\neq i),
-\qquad
-G_{ii}=-\sum_{j\neq i}R_{i\to j}.
-$$
-
-Hence $\mathbf 1^TG_{\mathrm{BBR}}=0$, so total probability is conserved. Thermal detailed balance gives
-
-$$
-R_{i\to j}s_i^{\mathrm{eq}}
-=R_{j\to i}s_j^{\mathrm{eq}},
-\qquad
-s_i^{\mathrm{eq}}\propto e^{-E_i/(k_BT)},
-$$
-
-making the Boltzmann population stationary. During a pulse of duration $\tau_a$, the optional noise map is applied after the conditioned measurement branch:
-
-$$
-s'_{a,k}=T_{\mathrm{BBR}}(\tau_a)s_{a,k}^{\mathrm{cond}},
-\qquad
-T_{\mathrm{BBR}}(\tau_a)=e^{G_{\mathrm{BBR}}\tau_a}.
-$$
-
-The implementation also provides the paper-style discretization
-
-$$
-T_{\mathrm{BBR}}(\tau_a)
-\approx\left(I+G_{\mathrm{BBR}}\,\delta t\right)^{\tau_a/\delta t},
-$$
-
-followed by numerical clipping and column normalization to preserve a stochastic population map.
-
-## Control objective
-
-Preparation succeeds at the stopping time
-
-$$
-\tau_\eta=\inf\{t:\max_i s_{t,i}\geq1-\eta\}.
-$$
-
-With $r_t=-1$, maximizing return minimizes expected pulse count. The optional overlap penalty uses
-
-$$
-o(s,s')=\frac{s^Ts'}{\lVert s\rVert_2\lVert s'\rVert_2},
-\qquad
-r=-1-r_o\mathbf 1\!\left[o(s,s')>1-\frac1{N_S}\right].
-$$
-
-The qMDP Double-DQN target averages all measurement outcomes:
-
-$$
-y(s,a)=\sum_k p_k(s,a)\left[
-r_k+\gamma(1-d_k)
-Q_{\bar\theta}\!\left(s'_k,
-\arg\max_{a'}Q_\theta(s'_k,a')\right)
-\right].
-$$
-
-Here $Q_\theta$ selects the next action, $Q_{\bar\theta}$ evaluates it, and $d_k$ marks a terminal branch. The target network follows
-
-$$
-\bar\theta\leftarrow(1-\tau)\bar\theta+\tau\theta.
-$$
-
-## Workflow
-
-$$
-\{H_a(t)\}
-\longrightarrow
-\{B_{a,k}\}
-\longrightarrow
-\text{Gym trajectories}
-\longrightarrow
-Q_\theta(s,a)
-\longrightarrow
-\widehat{P}(\tau_\eta\leq n).
-$$
-
-Code locations:
-
-- `src/rlqls/qutip_builder.py`: $H_a(t)\mapsto B_{a,k}$ through coherent QuTiP propagation.
-- `src/rlqls/model.py`: branch maps, normalization, and Boltzmann state.
-- `src/rlqls/materials.py`: CaH$^+$/H$_3$O$^+$ surrogate construction.
-- `src/rlqls/bbr.py`: $G_{\mathrm{BBR}}$ and $T_{\mathrm{BBR}}$.
-- `src/rlqls/env.py`: sampled measurement trajectory and complete branch API.
-- `src/rlqls/dqn.py`: sampled/qMDP Double-DQN targets.
-- `src/rlqls/evaluation.py`: greedy and pulse-sweeping Monte Carlo evaluation.
+The multi-task implementation uses one molecule per episode. It does not assume
+that several molecular ions coherently share one motional mode in the same
+experimental shot.
 
 ## Installation
 
@@ -174,75 +26,142 @@ python -m pip install -U pip
 python -m pip install -e '.[test,physics]'
 ```
 
-The `physics` extra installs QuTiP for exact propagation when complete Hamiltonians are available.
+The core requirements include Gymnasium 1.3, NumPy, SciPy, PyTorch, and
+Matplotlib. The optional `physics` extra installs QuTiP.
 
-## Run
+## Multi-molecule task family
 
-CaH$^+$:
+For molecule $m$, the state and local action set are
+
+$$
+s^{(m)}\in\Delta_{N_m-1},
+\qquad
+\mathcal A_m=\{0,\ldots,A_m-1\}.
+$$
+
+The quantum transition model remains molecule specific:
+
+$$
+q_k^{(m)}=B_{a,k}^{(m)}s,
+\qquad
+p_m(k\mid s,a)=\mathbf 1^{\mathsf T}q_k^{(m)},
+\qquad
+s'_k=\frac{q_k^{(m)}}{p_m(k\mid s,a)}.
+$$
+
+One shared GNN scores each molecule's valid pulse candidates:
+
+$$
+Q_\Theta(o_m,a),
+\qquad a\in\mathcal A_m.
+$$
+
+Padding provides fixed tensors for batching; an action mask ensures that the
+agent never selects pulse slots outside the local library.
+
+The default demonstration registry contains:
+
+| task | states | actions | status |
+|---|---:|---:|---|
+| CaH$^+$ | 16 | 13 | existing reconstruction, source |
+| MgH$^+$ | 16 | 13 | related-task transfer surrogate |
+| H$_3$O$^+$ | 130 | 218 | existing reconstruction, source |
+| D$_3$O$^+$ | 130 | 218 | related isotopologue transfer surrogate |
+
+MgH$^+$ and D$_3$O$^+$ validate the transfer software path. They are not
+independently calculated molecular spectra.
+
+## Main commands
+
+Inspect the integrated environment:
 
 ```bash
-python scripts/run_experiment.py \
-  --material CaH \
-  --episodes 1000 \
-  --eval-episodes 3000 \
-  --seed 7 \
-  --output results/my_cah_run
+PYTHONPATH=src python scripts/train_multitask.py --help
 ```
 
-H$_3$O$^+$:
+Train a shared controller:
 
 ```bash
-python scripts/run_experiment.py \
-  --material H3O \
-  --episodes 100 \
-  --eval-episodes 200 \
-  --seed 41 \
-  --batch-size 32 \
-  --train-every 8 \
-  --output results/my_h3o_run
+PYTHONPATH=src python scripts/train_multitask.py \
+  --tasks 'CaH+' 'H3O+' \
+  --episodes 240 \
+  --output results/source_controller
 ```
 
-Use `--update-mode qmdp` for the expected-branch target or `--update-mode sampled` for ordinary sampled Double DQN.
+Run the complete pretrain/zero-shot/fine-tune/scratch workflow:
 
-## Experimental results
+```bash
+PYTHONPATH=src python scripts/run_transfer_study.py \
+  --source-episodes 240 \
+  --target-episodes 60 \
+  --joint-episodes 160 \
+  --eval-episodes 500
+```
 
-The checked-in experiments evaluate greedy policies from a 300 K Boltzmann initial population with a 99% preparation threshold. Episode lengths include unsuccessful runs at the environment time limit (100 pulses for CaH$^+$ and 150 for H$_3$O$^+$). The following values come from the JSON files in [`results/`](results/); they are results for the reconstructed surrogate environments, not simulations from the unpublished pulse matrices used by the paper.
+Independently evaluate a saved checkpoint:
 
-| System and policy | Training | Evaluation | Success | Mean pulses | Completion at reference horizon |
-|---|---:|---:|---:|---:|---:|
-| CaH$^+$ qMDP DDQN, seed 7 | 1,000 episodes | 3,000 episodes | 100% | 8.43 | 54.8% by 8; 97.8% by 18 |
-| CaH$^+$ pulse sweeping | -- | 3,000 episodes | 100% | 8.79 | 55.8% by 8; 95.7% by 18 |
-| H$_3$O$^+$ qMDP DDQN, four-motion surrogate | 100 episodes | 200 episodes | 12% | 132.24 censored | 12% by 62 and 150 |
-| H$_3$O$^+$ pulse sweeping, four-motion surrogate | -- | 200 episodes | 36% | 132.46 censored | 1% by 62; 36% by 150 |
+```bash
+PYTHONPATH=src python scripts/evaluate_transfer.py \
+  --checkpoint results/source_controller/checkpoint.pt \
+  --tasks 'MgH+' 'D3O+' \
+  --episodes 500
+```
 
-### CaH$^+$ analysis
+Rebuild the supplied multi-policy transfer comparison from saved checkpoints:
 
-Across qMDP seeds 3, 5, and 7, the greedy mean episode lengths were 8.251, 8.842, and 8.428 pulses, respectively, or $8.51\pm0.30$ pulses (mean $\pm$ sample standard deviation). This is 2.5% above the paper's reported mean of 8.3 pulses. Mean completion was $53.7\%\pm2.6\%$ by 8 pulses and $97.76\%\pm0.14\%$ by 18 pulses, compared with 56% and 99% in the paper.
+```bash
+PYTHONPATH=src python scripts/validate_transfer_suite.py \
+  --output results/multimolecule_transfer_final \
+  --episodes 500 \
+  --reuse-existing
+```
 
-The close mean and late-horizon completion show that the reduced model captures the overall difficulty of CaH$^+$ preparation. It does not reproduce the early-time distribution: the surrogate has 9.8% mean completion after only two pulses, whereas the paper reports 0%. The dominant-edge reconstruction omits weak and off-resonant channels, allowing some measurement branches to identify a molecular destination too cleanly. Sweeping is also easier here than in the paper (8.79 versus 9.7 mean pulses), so the reconstructed RL advantage over sweeping is modest and should not be interpreted as a faithful policy-performance gap.
+## Architecture map
 
-![CaH training curves](results/figures/cah_training.png)
+### Physics and Gym environment
 
-![CaH cumulative completion](results/figures/cah_completion.png)
+- `src/rlqls/model.py`: molecule-specific branch maps $B_{a,k}$.
+- `src/rlqls/multitask/task.py`: one molecular MDP plus transferable metadata.
+- `src/rlqls/multitask/registry.py`: extensible molecule registry.
+- `src/rlqls/multitask/env.py`: integrated Gymnasium environment and masks.
+- `src/rlqls/multitask/builders.py`: CaH$^+$/H$_3$O$^+$ sources and related targets.
 
-### H$_3$O$^+$ analysis
+### Graph observation and chemistry
 
-The more paper-faithful H$_3$O$^+$ surrogate retains four motional states but reaches only 12% greedy completion by 62 pulses, far below the paper's 80%; its success fraction remains at 12% through the 150-pulse limit. Successful RL trajectories finish in about two pulses while most trajectories time out. This lottery-like split indicates a few nearly pure branches rather than the connected, informative action graph needed for robust cooling. Pulse sweeping reaches 36% by 150 pulses and therefore outperforms the learned policy on this reconstruction.
+- `src/rlqls/features/chemistry.py`: atom/isotope chemistry graphs.
+- `src/rlqls/features/spectroscopy.py`: level and pulse-transition descriptors.
+- `src/rlqls/multitask/observation.py`: padded masked graph observations.
 
-This negative result localizes the main reproduction limitation to the physics inputs. The published state and Raman-transition tables do not uniquely specify the exact 218 pulse definitions, pulse-conditioned branch matrices, weak off-resonant couplings, or multilevel interference. A less faithful binary-motion sensitivity model reaches 38% completion, further showing that the result is highly dependent on reconstruction assumptions rather than DQN training alone. See [`results/reproduction_report.md`](results/reproduction_report.md) for the run configurations, seed-level data, paper comparisons, and uncertainty analysis.
+### Shared GNN and learning
 
-![H3O training curves](results/figures/h3o_training.png)
+- `src/rlqls/gnn/chemistry_encoder.py`: atom/isotope message passing.
+- `src/rlqls/gnn/spectroscopy_encoder.py`: chemistry-conditioned level GNN.
+- `src/rlqls/gnn/pulse_scorer.py`: variable-cardinality pulse/hyperedge scorer.
+- `src/rlqls/gnn/q_network.py`: shared $Q_\Theta(o_m,a)$.
+- `src/rlqls/multitask/replay.py`: task-balanced replay.
+- `src/rlqls/multitask/qmdp.py`: heterogeneous expected-branch target.
+- `src/rlqls/multitask/trainer.py`: shared Double-DQN/qMDP training.
 
-![H3O cumulative completion](results/figures/h3o_completion.png)
+## Walkthrough and results
+
+- [`MULTI_MOLECULE_GNN_RLQLS_WALKTHROUGH.md`](MULTI_MOLECULE_GNN_RLQLS_WALKTHROUGH.md): detailed code and mathematical walkthrough.
+- [`results/multimolecule_transfer_final/TRANSFER_RESULTS.md`](results/multimolecule_transfer_final/TRANSFER_RESULTS.md): supplied transfer experiment and limitations.
+- [`RL_MDP_WORKFLOW_WALKTHROUGH.md`](RL_MDP_WORKFLOW_WALKTHROUGH.md): original single-molecule workflow.
+- [`results/reproduction_report.md`](results/reproduction_report.md): original CaH$^+$/H$_3$O$^+$ reconstruction assessment.
 
 ## Verification
 
 ```bash
-PYTHONPATH=src pytest -q tests
+PYTHONPATH=src pytest -q
 ```
 
-Tests cover branch-map trace preservation, normalized outcome probabilities, Gymnasium returns, and CaH$^+$/H$_3$O$^+$ dimensions.
+The tests cover branch-map normalization, Gymnasium signatures, variable
+state/action sizes, action masking, shared GNN forward passes, multi-task qMDP
+training, and a terminal-reachability diagnostic for the related surrogates.
 
-## Scope
+## Interpretation limits
 
-The control/RL equations are implemented directly. Numerical reproduction is limited by unpublished pulse definitions and transition matrices: CaH$^+$ is a reduced-model reconstruction; H$_3$O$^+$ is a partial sensitivity model. See `results/reproduction_report.md` before interpreting numerical agreement.
+The exact pulse-conditioned matrices used by the paper are not public. The
+provided source environments therefore remain reconstructions. The new
+multi-molecule transfer experiment validates the architecture and learning
+workflow; it is not evidence for quantitative MgH$^+$ or D$_3$O$^+$ control.

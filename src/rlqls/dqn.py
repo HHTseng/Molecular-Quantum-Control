@@ -1,16 +1,46 @@
 """PyTorch DQN and expected-branch qMDP training for RL-QLS.
 
-The online network approximates ``Q_theta(s,a)``.  The qMDP update integrates
-over every quantum-measurement branch, whereas sampled DDQN uses only the
-realized transition.  Equations follow pseudocode Secs. 7--14.
-"""
+The neural network receives the molecular posterior population s and returns
+one Q value for every pulse action:
 
+    Q_theta(s) = (Q_theta(s,0), ..., Q_theta(s,A-1)).
+
+During interaction, an epsilon-greedy policy chooses either a random pulse or
+
+    a_t = argmax_a Q_theta(s_t,a).
+
+Two Bellman targets are implemented.
+
+Sampled Double DQN
+------------------
+Only the measurement branch realized by ``env.step`` is used:
+
+    y_sample = r + gamma (1-d)
+               Q_target(s', argmax_a Q_online(s',a)).
+
+Expected-branch qMDP Double DQN
+--------------------------------
+The known pulse/measurement model is used to average over every motional
+outcome k before sampling noise enters the target:
+
+    y_qMDP = sum_k p(k|s,a) [
+                 r_k + gamma (1-d_k)
+                 Q_target(F_{a,k}(s),
+                          argmax_a' Q_online(F_{a,k}(s),a'))
+             ].
+
+This is the code-level implementation of Supplemental Eq. (S18), augmented by
+Double-DQN action selection/evaluation.  The paper states that both qMDP and
+double-Q networks are used but does not print their combined formula; this
+combination is therefore a documented implementation choice.
+"""
 from __future__ import annotations
 
 from collections import deque
 from dataclasses import asdict, dataclass, field
-import math, random
+import math
 from pathlib import Path
+import random
 from typing import Literal
 
 import numpy as np
@@ -25,7 +55,8 @@ UpdateMode = Literal["qmdp", "sampled"]
 
 @dataclass(slots=True)
 class DQNConfig:
-    """Hyperparameters in the notation of pseudocode Secs. 9--13."""
+    """Hyperparameters for the paper-style DQN agent."""
+
     episodes: int = 1000
     hidden_sizes: tuple[int, ...] = (128, 128, 128)
     learning_rate: float = 5e-4
@@ -46,18 +77,31 @@ class DQNConfig:
     device: str = "cpu"
     torch_num_threads: int | None = 1
 
+    # The original reproduction treated the artificial max-step cutoff as an
+    # absorbing failed episode, so the default below preserves those results.
+    # Set True to follow the common continuing-task convention of bootstrapping
+    # across a Gymnasium truncation.  Physical task completion (terminated)
+    # never bootstraps.
+    bootstrap_on_truncation: bool = False
+
     def epsilon(self, episode: int) -> float:
-        """Compute ``eps(n)=eps_f+(eps_0-eps_f) exp(-n/tau_eps)``."""
-        # Corrected sign relative to printed Supplemental Eq. (S16), so eps(0)=eps_start.
+        """Exponentially decay exploration from epsilon_start to epsilon_end.
+
+        The printed sign in Supplemental Eq. (S16) does not yield
+        epsilon(0)=epsilon_start.  This corrected conventional expression does.
+        """
+
         tau = max(self.epsilon_decay_fraction * self.episodes, 1e-12)
         return float(
-            self.epsilon_end + (self.epsilon_start - self.epsilon_end) * math.exp(-episode / tau)
+            self.epsilon_end
+            + (self.epsilon_start - self.epsilon_end) * math.exp(-episode / tau)
         )
 
 
 @dataclass(frozen=True, slots=True)
 class ReplayItem:
-    """One sampled tuple ``(s,a,r,s',terminated,truncated)`` (Sec. 8)."""
+    """One sampled environment interaction stored for off-policy learning."""
+
     state: np.ndarray
     action: int
     reward: float
@@ -68,45 +112,62 @@ class ReplayItem:
 
 
 class ReplayBuffer:
-    """Uniform finite replay memory used to decorrelate trajectory samples."""
-    def __init__(self, capacity: int, seed: int):
+    """Uniform experience replay buffer."""
+
+    def __init__(self, capacity: int, seed: int) -> None:
         self.data: deque[ReplayItem] = deque(maxlen=capacity)
         self.rng = random.Random(seed)
 
-    def append(self, x: ReplayItem):
-        self.data.append(x)
+    def append(self, item: ReplayItem) -> None:
+        self.data.append(item)
 
-    def sample(self, n: int):
+    def sample(self, n: int) -> list[ReplayItem]:
         return self.rng.sample(self.data, n)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.data)
 
 
 class QNetwork(nn.Module):
-    """MLP mapping ``s in Delta_(N_S-1)`` to ``(Q(s,a))_(a=0)^(N_A-1)``."""
-    def __init__(self, n_states: int, n_actions: int, hidden_sizes: tuple[int, ...]):
+    """Fully connected approximation to the pulse action-value function.
+
+    Input dimension:
+        N molecular population components.
+    Output dimension:
+        A pulse values, one per discrete action.
+
+    The default ``(128,128,128)`` architecture follows the paper's three hidden
+    layers with 128 nodes per layer.
+    """
+
+    def __init__(
+        self,
+        n_states: int,
+        n_actions: int,
+        hidden_sizes: tuple[int, ...],
+    ) -> None:
         super().__init__()
-        layers = []
+        layers: list[nn.Module] = []
         width = n_states
-        for h in hidden_sizes:
-            layers += [nn.Linear(width, h), nn.ReLU()]
-            width = h
+        for hidden_width in hidden_sizes:
+            layers.extend([nn.Linear(width, hidden_width), nn.ReLU()])
+            width = hidden_width
         layers.append(nn.Linear(width, n_actions))
         self.net = nn.Sequential(*layers)
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.kaiming_uniform_(m.weight, nonlinearity="relu")
-                nn.init.zeros_(m.bias)
 
-    def forward(self, x):
-        """Evaluate all pulse-action values for one state or a state batch."""
-        return self.net(x)
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
+                nn.init.zeros_(module.bias)
+
+    def forward(self, state_batch: torch.Tensor) -> torch.Tensor:
+        """Return shape ``(batch,A)`` from input shape ``(batch,N)``."""
+
+        return self.net(state_batch)
 
 
 @dataclass(slots=True)
 class TrainingHistory:
-    """Learning curves and counters; returns equal ``sum_t r_t`` per episode."""
     episode_lengths: list[int] = field(default_factory=list)
     episode_returns: list[float] = field(default_factory=list)
     episode_success: list[bool] = field(default_factory=list)
@@ -115,19 +176,18 @@ class TrainingHistory:
     total_environment_steps: int = 0
     optimizer_steps: int = 0
 
-    def as_dict(self):
+    def as_dict(self) -> dict:
         return asdict(self)
 
 
 @dataclass(slots=True)
 class TrainedDQN:
-    """Online parameters ``theta``, target parameters ``theta_bar``, and history."""
     online: QNetwork
     target: QNetwork
     config: DQNConfig
     history: TrainingHistory
 
-    def save(self, path: str | Path):
+    def save(self, path: str | Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(
@@ -141,18 +201,31 @@ class TrainedDQN:
         )
 
 
-def _soft_update(target, online, tau):
-    """Apply ``theta_bar <- (1-tau) theta_bar + tau theta`` (Sec. 12)."""
+def _soft_update(target: QNetwork, online: QNetwork, tau: float) -> None:
+    """Polyak update: theta_target <- (1-tau) theta_target + tau theta_online."""
+
     with torch.no_grad():
-        for tp, op in zip(target.parameters(), online.parameters()):
-            tp.mul_(1 - tau).add_(op, alpha=tau)
+        for target_parameter, online_parameter in zip(
+            target.parameters(),
+            online.parameters(),
+        ):
+            target_parameter.mul_(1.0 - tau).add_(online_parameter, alpha=tau)
 
 
-def greedy_action(network: QNetwork, state: np.ndarray, device: torch.device) -> int:
-    """Return ``argmax_a Q_theta(s,a)``."""
+def greedy_action(
+    network: QNetwork,
+    state: np.ndarray,
+    device: torch.device,
+) -> int:
+    """Select the pulse index with maximum predicted Q value."""
+
     with torch.no_grad():
-        x = torch.as_tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-        return int(network(x).argmax(1).item())
+        state_tensor = torch.as_tensor(
+            state,
+            dtype=torch.float32,
+            device=device,
+        ).unsqueeze(0)
+        return int(network(state_tensor).argmax(dim=1).item())
 
 
 def _qmdp_target_torch(
@@ -165,65 +238,122 @@ def _qmdp_target_torch(
     gamma: float,
     branch_maps: torch.Tensor,
     bbr_maps: torch.Tensor | None,
+    *,
+    bootstrap_on_truncation: bool,
 ) -> torch.Tensor:
-    """Compute the expected-branch Double-DQN target (pseudocode Sec. 11).
+    """Vectorized expected-branch Double-DQN target.
 
-    For each replay pair ``(s_b,a_b)``, this returns
-    ``y_b=sum_k p_k [r_k + gamma(1-d_k) Q_target(s'_k,argmax Q_online)]``.
+    This function intentionally recomputes *both* measurement branches from the
+    replayed ``(s,a)`` pair.  The sampled ``next_state`` stored in replay is not
+    used in qMDP mode because Supplemental Eq. (S18) averages over the exact
+    branch probabilities instead of one Monte Carlo outcome.
     """
-    maps = branch_maps[actions]  # (B,2,N,N)
-    raw = torch.matmul(maps, states[:, None, :, None]).squeeze(-1)  # B_{a,k}s
-    raw_mass = raw.sum(dim=2)  # Born masses p_k=1^T B_{a,k}s
+
+    # Select the two B[a,k] matrices for every replay item.
+    maps = branch_maps[actions]  # (batch,2,N,N)
+
+    # q_{a,k}=B[a,k]s.  Broadcasting inserts the outcome axis.
+    raw = torch.matmul(maps, states[:, None, :, None]).squeeze(-1)  # (B,2,N)
+    raw_mass = raw.sum(dim=2)  # (B,2)
+
+    # p(k|s,a).  The denominator should already equal one for trace-preserving
+    # maps, but explicit normalization protects against roundoff.
     probabilities = raw_mass / raw_mass.sum(dim=1, keepdim=True).clamp_min(1e-15)
+
+    # F_{a,k}(s)=q_{a,k}/p(k|s,a).
     safe_mass = raw_mass.clamp_min(1e-15)
     next_states = raw / safe_mass[:, :, None]
-    zero_mask = raw_mass <= 1e-15
-    if torch.any(zero_mask):
-        next_states = torch.where(zero_mask[:, :, None], states[:, None, :], next_states)
+    zero_probability = raw_mass <= 1e-15
+    if torch.any(zero_probability):
+        next_states = torch.where(
+            zero_probability[:, :, None],
+            states[:, None, :],
+            next_states,
+        )
 
+    # Optional blackbody-radiation population propagation after conditioning.
     if bbr_maps is not None and env.apply_bbr:
         noise = bbr_maps[actions]  # (B,N,N)
-        next_states = torch.matmul(noise[:, None, :, :], next_states[:, :, :, None]).squeeze(-1)
+        next_states = torch.matmul(
+            noise[:, None, :, :],
+            next_states[:, :, :, None],
+        ).squeeze(-1)
         next_states = next_states.clamp_min(0.0)
         next_states = next_states / next_states.sum(dim=2, keepdim=True).clamp_min(1e-15)
 
-    # Branch reward uses cosine overlap o(s,s'_k), pseudocode Sec. 2.7.
+    # Branch-dependent physics-informed reward.
     dot = torch.sum(states[:, None, :] * next_states, dim=2)
-    norm = torch.linalg.vector_norm(states, dim=1)[:, None] * torch.linalg.vector_norm(
-        next_states, dim=2
+    norm = (
+        torch.linalg.vector_norm(states, dim=1)[:, None]
+        * torch.linalg.vector_norm(next_states, dim=2)
     )
-    overlaps = torch.where(norm > 0.0, dot / norm.clamp_min(1e-15), torch.ones_like(dot))
+    overlaps = torch.where(
+        norm > 0.0,
+        dot / norm.clamp_min(1e-15),
+        torch.ones_like(dot),
+    )
     rewards = torch.full_like(probabilities, env.base_reward)
     if env.overlap_penalty > 0.0:
-        rewards = rewards - env.overlap_penalty * (overlaps > env.overlap_threshold).to(
-            rewards.dtype
-        )
+        rewards = rewards - env.overlap_penalty * (
+            overlaps > env.overlap_threshold
+        ).to(rewards.dtype)
 
-    terminal = torch.amax(next_states, dim=2) >= env.confidence_threshold  # max_i s'_i >= 1-eta
-    time_limit = next_step_counts[:, None] >= env.max_steps
-    done = torch.logical_or(terminal, time_limit).to(torch.float32)
+    # Physical success is a true MDP terminal state.
+    terminal = torch.amax(next_states, dim=2) >= env.confidence_threshold
+
+    # ``max_steps`` is a simulation cutoff, not a physical state property.
+    # The default configuration treats it as absorbing failure to preserve the
+    # reproduction runs.  Set bootstrap_on_truncation=True to bootstrap instead.
+    if bootstrap_on_truncation:
+        done = terminal
+    else:
+        time_limit = next_step_counts[:, None] >= env.max_steps
+        done = torch.logical_or(terminal, time_limit)
+    done_float = done.to(torch.float32)
 
     flat_next = next_states.reshape(-1, env.model.n_states)
     with torch.no_grad():
-        # Double DQN: theta selects a*, theta_bar evaluates Q(s',a*).
-        chosen = online(flat_next).argmax(dim=1, keepdim=True)
-        values = target(flat_next).gather(1, chosen).reshape(states.shape[0], 2)
-        return torch.sum(probabilities * (rewards + gamma * (1.0 - done) * values), dim=1)
+        # Double DQN: online network selects, target network evaluates.
+        chosen_actions = online(flat_next).argmax(dim=1, keepdim=True)
+        branch_values = target(flat_next).gather(1, chosen_actions)
+        branch_values = branch_values.reshape(states.shape[0], 2)
+
+        branch_targets = rewards + gamma * (1.0 - done_float) * branch_values
+        return torch.sum(probabilities * branch_targets, dim=1)
 
 
-def _sampled_target(items, online, target, gamma, device):
-    """Compute ``y=r+gamma(1-d)Q_target(s',argmax Q_online)`` (Sec. 10)."""
-    ns = torch.as_tensor(
-        np.stack([x.next_state for x in items]), dtype=torch.float32, device=device
+def _sampled_target(
+    items: list[ReplayItem],
+    online: QNetwork,
+    target: QNetwork,
+    gamma: float,
+    device: torch.device,
+    *,
+    bootstrap_on_truncation: bool,
+) -> torch.Tensor:
+    """Ordinary sampled Double-DQN target from realized transitions."""
+
+    next_states = torch.as_tensor(
+        np.stack([item.next_state for item in items]),
+        dtype=torch.float32,
+        device=device,
     )
-    r = torch.as_tensor([x.reward for x in items], dtype=torch.float32, device=device)
-    d = torch.as_tensor(
-        [x.terminated or x.truncated for x in items], dtype=torch.float32, device=device
+    rewards = torch.as_tensor(
+        [item.reward for item in items],
+        dtype=torch.float32,
+        device=device,
     )
+
+    if bootstrap_on_truncation:
+        done_values = [item.terminated for item in items]
+    else:
+        done_values = [item.terminated or item.truncated for item in items]
+    done = torch.as_tensor(done_values, dtype=torch.float32, device=device)
+
     with torch.no_grad():
-        chosen = online(ns).argmax(1, keepdim=True)
-        values = target(ns).gather(1, chosen).squeeze(1)
-        return r + gamma * (1 - d) * values
+        chosen_actions = online(next_states).argmax(dim=1, keepdim=True)
+        values = target(next_states).gather(1, chosen_actions).squeeze(1)
+        return rewards + gamma * (1.0 - done) * values
 
 
 def train_dqn(
@@ -233,19 +363,38 @@ def train_dqn(
     initial_online_state: dict[str, torch.Tensor] | None = None,
     initial_target_state: dict[str, torch.Tensor] | None = None,
 ) -> TrainedDQN:
-    """Train along sampled trajectories with qMDP or sampled DDQN targets.
+    """Interact with the Gym environment and optimize the pulse-value network.
 
-    The realized branch advances ``s_t -> s_(t+1)`` in both modes.  In qMDP
-    mode the optimizer target re-computes and averages both possible outcomes.
+    Data-flow summary
+    -----------------
+    1. ``state = env.reset()`` gives a thermal molecular population.
+    2. The epsilon-greedy policy chooses a pulse index.
+    3. ``env.step(action)`` samples one motional measurement and returns the
+       conditioned molecular population.
+    4. The realized transition is stored in replay.
+    5. A replay minibatch updates Q using either the sampled or qMDP target.
+    6. The target network is softly moved toward the online network.
     """
+
     if config.torch_num_threads is not None:
         torch.set_num_threads(config.torch_num_threads)
+
     random.seed(config.seed)
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
+
     device = torch.device(config.device)
-    online = QNetwork(env.model.n_states, env.model.n_actions, config.hidden_sizes).to(device)
-    target = QNetwork(env.model.n_states, env.model.n_actions, config.hidden_sizes).to(device)
+    online = QNetwork(
+        env.model.n_states,
+        env.model.n_actions,
+        config.hidden_sizes,
+    ).to(device)
+    target = QNetwork(
+        env.model.n_states,
+        env.model.n_actions,
+        config.hidden_sizes,
+    ).to(device)
+
     if initial_online_state is not None:
         online.load_state_dict(initial_online_state)
     if initial_target_state is not None:
@@ -253,92 +402,152 @@ def train_dqn(
     else:
         target.load_state_dict(online.state_dict())
     target.eval()
-    optimizer = torch.optim.Adam(online.parameters(), lr=config.learning_rate)
+
+    optimizer = torch.optim.Adam(
+        online.parameters(),
+        lr=config.learning_rate,
+    )
     replay = ReplayBuffer(config.replay_capacity, config.seed)
     history = TrainingHistory()
     global_step = 0
-    branch_maps = torch.as_tensor(env.model.branch_matrices, dtype=torch.float32, device=device)
+
+    # Copy the physics transition kernel to the training device once.  qMDP
+    # then computes both branches with batched tensor operations.
+    branch_maps = torch.as_tensor(
+        env.model.branch_matrices,
+        dtype=torch.float32,
+        device=device,
+    )
     bbr_maps = (
         None
         if env.model.bbr_propagators is None
-        else torch.as_tensor(env.model.bbr_propagators, dtype=torch.float32, device=device)
+        else torch.as_tensor(
+            env.model.bbr_propagators,
+            dtype=torch.float32,
+            device=device,
+        )
     )
+
     for episode in range(config.episodes):
         state, _ = env.reset(seed=config.seed + episode)
-        terminated = truncated = False
-        ret = 0.0
-        steps = 0
+        terminated = False
+        truncated = False
+        episode_return = 0.0
+        episode_steps = 0
         epsilon = config.epsilon(episode)
+
         while not (terminated or truncated):
-            # Epsilon-greedy pulse selection: random exploration vs argmax_a Q_theta.
-            action = (
-                int(np.random.randint(env.model.n_actions))
-                if np.random.random() < epsilon
-                else greedy_action(online, state, device)
-            )
+            # Exploration changes the pulse selected, not the measurement
+            # result.  The latter remains sampled by the quantum environment.
+            if np.random.random() < epsilon:
+                action = int(np.random.randint(env.model.n_actions))
+            else:
+                action = greedy_action(online, state, device)
+
             next_state, reward, terminated, truncated, info = env.step(action)
-            steps += 1
+            episode_steps += 1
             global_step += 1
-            ret += reward
+            episode_return += reward
+
             replay.append(
                 ReplayItem(
-                    state.copy(),
-                    action,
-                    reward,
-                    next_state.copy(),
-                    terminated,
-                    truncated,
-                    int(info["step_count"]),
+                    state=state.copy(),
+                    action=action,
+                    reward=reward,
+                    next_state=next_state.copy(),
+                    terminated=terminated,
+                    truncated=truncated,
+                    next_step_count=int(info["step_count"]),
                 )
             )
             state = next_state
-            if (
-                len(replay) >= max(config.batch_size, config.warmup_transitions)
-                and global_step % config.train_every_steps == 0
-            ):
+
+            enough_data = len(replay) >= max(
+                config.batch_size,
+                config.warmup_transitions,
+            )
+            update_due = global_step % config.train_every_steps == 0
+            if enough_data and update_due:
                 for _ in range(config.gradient_steps):
                     items = replay.sample(config.batch_size)
-                    s = torch.as_tensor(
-                        np.stack([x.state for x in items]), dtype=torch.float32, device=device
+                    states = torch.as_tensor(
+                        np.stack([item.state for item in items]),
+                        dtype=torch.float32,
+                        device=device,
                     )
-                    a = torch.as_tensor([x.action for x in items], dtype=torch.long, device=device)
-                    prediction = online(s).gather(1, a[:, None]).squeeze(1)  # Q_theta(s_b,a_b)
+                    actions = torch.as_tensor(
+                        [item.action for item in items],
+                        dtype=torch.long,
+                        device=device,
+                    )
+
+                    # Q_theta(s,a): select the network output corresponding to
+                    # the pulse that was actually taken in each replay item.
+                    prediction = online(states).gather(
+                        1,
+                        actions[:, None],
+                    ).squeeze(1)
+
                     if config.update_mode == "qmdp":
                         next_step_counts = torch.as_tensor(
-                            [x.next_step_count for x in items], dtype=torch.long, device=device
+                            [item.next_step_count for item in items],
+                            dtype=torch.long,
+                            device=device,
                         )
                         expected = _qmdp_target_torch(
-                            env,
-                            s,
-                            a,
-                            next_step_counts,
-                            online,
-                            target,
-                            config.gamma,
-                            branch_maps,
-                            bbr_maps,
+                            env=env,
+                            states=states,
+                            actions=actions,
+                            next_step_counts=next_step_counts,
+                            online=online,
+                            target=target,
+                            gamma=config.gamma,
+                            branch_maps=branch_maps,
+                            bbr_maps=bbr_maps,
+                            bootstrap_on_truncation=config.bootstrap_on_truncation,
                         )
                     else:
-                        expected = _sampled_target(items, online, target, config.gamma, device)
-                    loss = (
-                        F.smooth_l1_loss(prediction, expected)
-                        if config.loss == "smooth_l1"
-                        else F.mse_loss(prediction, expected)
-                    )
+                        expected = _sampled_target(
+                            items=items,
+                            online=online,
+                            target=target,
+                            gamma=config.gamma,
+                            device=device,
+                            bootstrap_on_truncation=config.bootstrap_on_truncation,
+                        )
+
+                    if config.loss == "smooth_l1":
+                        loss = F.smooth_l1_loss(prediction, expected)
+                    else:
+                        loss = F.mse_loss(prediction, expected)
+
                     optimizer.zero_grad(set_to_none=True)
                     loss.backward()
                     if config.gradient_clip_norm is not None:
-                        nn.utils.clip_grad_norm_(online.parameters(), config.gradient_clip_norm)
+                        nn.utils.clip_grad_norm_(
+                            online.parameters(),
+                            config.gradient_clip_norm,
+                        )
                     optimizer.step()
                     _soft_update(target, online, config.target_tau)
+
                     history.losses.append(float(loss.detach().cpu()))
                     history.optimizer_steps += 1
-        history.episode_lengths.append(steps)
-        history.episode_returns.append(ret)
+
+        history.episode_lengths.append(episode_steps)
+        history.episode_returns.append(episode_return)
         history.episode_success.append(bool(terminated))
         history.epsilons.append(epsilon)
+
     history.total_environment_steps = global_step
     return TrainedDQN(online, target, config, history)
 
 
-__all__ = ["DQNConfig", "QNetwork", "TrainingHistory", "TrainedDQN", "train_dqn", "greedy_action"]
+__all__ = [
+    "DQNConfig",
+    "QNetwork",
+    "TrainingHistory",
+    "TrainedDQN",
+    "train_dqn",
+    "greedy_action",
+]

@@ -1,0 +1,394 @@
+{
+  "evaluation_episodes": 500,
+  "seeds": {
+    "MgH+": 9101,
+    "D3O+": 9201
+  },
+  "tasks": {
+    "CaH+": {
+      "n_states": 16,
+      "n_actions": 13,
+      "n_pulse_transition_records": 16,
+      "family": "diatomic_hydride",
+      "transfer_group": "metal_hydride",
+      "model_kind": "dominant-edge surrogate",
+      "derived_from": null,
+      "maximum_one_step_conditional_purity": 1.0
+    },
+    "MgH+": {
+      "n_states": 16,
+      "n_actions": 13,
+      "n_pulse_transition_records": 16,
+      "family": "diatomic_hydride",
+      "transfer_group": "metal_hydride",
+      "model_kind": "related-task transfer demonstration surrogate",
+      "derived_from": "CaH+",
+      "maximum_one_step_conditional_purity": 0.9985000000976771
+    },
+    "H3O+": {
+      "n_states": 130,
+      "n_actions": 218,
+      "n_pulse_transition_records": 324,
+      "family": "hydronium_isotopologue",
+      "transfer_group": "hydronium",
+      "model_kind": "Table-S3/S4 local coherent surrogate",
+      "derived_from": null,
+      "maximum_one_step_conditional_purity": 1.0
+    },
+    "D3O+": {
+      "n_states": 130,
+      "n_actions": 218,
+      "n_pulse_transition_records": 320,
+      "family": "hydronium_isotopologue",
+      "transfer_group": "hydronium",
+      "model_kind": "related-task transfer demonstration surrogate",
+      "derived_from": "H3O+",
+      "maximum_one_step_conditional_purity": 0.9975000002862402
+    }
+  },
+  "source_evaluation": {
+    "CaH+": {
+      "task": "CaH+",
+      "policy": "source-pretrained",
+      "episodes": 500,
+      "success_rate": 1.0,
+      "mean_censored_length": 9.216,
+      "mean_successful_length": 9.216,
+      "median_censored_length": 8.0,
+      "completion_fraction": {
+        "2": 0.108,
+        "8": 0.504,
+        "18": 0.96,
+        "25": 1.0
+      }
+    },
+    "H3O+": {
+      "task": "H3O+",
+      "policy": "source-pretrained",
+      "episodes": 500,
+      "success_rate": 0.714,
+      "mean_censored_length": 11.622,
+      "mean_successful_length": 8.266106442577032,
+      "median_censored_length": 11.0,
+      "completion_fraction": {
+        "2": 0.09,
+        "8": 0.356,
+        "18": 0.708,
+        "20": 0.714
+      }
+    }
+  },
+  "target_evaluation": {
+    "MgH+": {
+      "zero-shot": {
+        "task": "MgH+",
+        "policy": "zero-shot",
+        "episodes": 500,
+        "success_rate": 0.588,
+        "mean_censored_length": 15.384,
+        "mean_successful_length": 8.646258503401361,
+        "median_censored_length": 16.0,
+        "completion_fraction": {
+          "2": 0.14,
+          "8": 0.39,
+          "18": 0.53,
+          "25": 0.588
+        },
+        "success_ci95": [
+          0.5443465920099858,
+          0.630311524068781
+        ]
+      },
+      "zero-shot-no-chemistry": {
+        "task": "MgH+",
+        "policy": "zero-shot-no-chemistry",
+        "episodes": 500,
+        "success_rate": 0.496,
+        "mean_censored_length": 15.946,
+        "mean_successful_length": 6.745967741935484,
+        "median_censored_length": 25.0,
+        "completion_fraction": {
+          "2": 0.148,
+          "8": 0.332,
+          "18": 0.44,
+          "25": 0.496
+        },
+        "success_ci95": [
+          0.45237314911404547,
+          0.539687845609647
+        ]
+      },
+      "fine-tuned": {
+        "task": "MgH+",
+        "policy": "fine-tuned",
+        "episodes": 500,
+        "success_rate": 0.962,
+        "mean_censored_length": 9.914,
+        "mean_successful_length": 9.318087318087318,
+        "median_censored_length": 10.0,
+        "completion_fraction": {
+          "2": 0.14,
+          "8": 0.472,
+          "18": 0.902,
+          "25": 0.962
+        },
+        "success_ci95": [
+          0.9414152274693561,
+          0.9755398819441696
+        ]
+      },
+      "scratch": {
+        "task": "MgH+",
+        "policy": "scratch",
+        "episodes": 500,
+        "success_rate": 0.0,
+        "mean_censored_length": 25.0,
+        "mean_successful_length": NaN,
+        "median_censored_length": 25.0,
+        "completion_fraction": {
+          "2": 0.0,
+          "8": 0.0,
+          "18": 0.0,
+          "25": 0.0
+        },
+        "success_ci95": [
+          4.336808689942018e-19,
+          0.007624340461552241
+        ]
+      },
+      "joint": {
+        "task": "MgH+",
+        "policy": "joint",
+        "episodes": 500,
+        "success_rate": 0.18,
+        "mean_censored_length": 21.552,
+        "mean_successful_length": 5.844444444444444,
+        "median_censored_length": 25.0,
+        "completion_fraction": {
+          "2": 0.076,
+          "8": 0.126,
+          "18": 0.18,
+          "25": 0.18
+        },
+        "success_ci95": [
+          0.148804907912759,
+          0.21607466998263444
+        ]
+      },
+      "sweeping": {
+        "task": "MgH+",
+        "policy": "sweeping",
+        "episodes": 500,
+        "success_rate": 0.938,
+        "mean_censored_length": 9.378,
+        "mean_successful_length": 8.3454157782516,
+        "median_censored_length": 8.0,
+        "completion_fraction": {
+          "2": 0.13,
+          "8": 0.554,
+          "18": 0.89,
+          "25": 0.938
+        },
+        "success_ci95": [
+          0.9133402868983618,
+          0.9559807908573184
+        ]
+      },
+      "random": {
+        "task": "MgH+",
+        "policy": "random",
+        "episodes": 500,
+        "success_rate": 0.67,
+        "mean_censored_length": 15.33,
+        "mean_successful_length": 10.567164179104477,
+        "median_censored_length": 16.0,
+        "completion_fraction": {
+          "2": 0.086,
+          "8": 0.314,
+          "18": 0.552,
+          "25": 0.67
+        },
+        "success_ci95": [
+          0.6276256239722534,
+          0.709782100270819
+        ]
+      }
+    },
+    "D3O+": {
+      "zero-shot": {
+        "task": "D3O+",
+        "policy": "zero-shot",
+        "episodes": 500,
+        "success_rate": 0.354,
+        "mean_censored_length": 15.308,
+        "mean_successful_length": 6.745762711864407,
+        "median_censored_length": 20.0,
+        "completion_fraction": {
+          "2": 0.078,
+          "8": 0.276,
+          "18": 0.35,
+          "20": 0.354
+        },
+        "success_ci95": [
+          0.3133423051969017,
+          0.3968840022178716
+        ]
+      },
+      "zero-shot-no-chemistry": {
+        "task": "D3O+",
+        "policy": "zero-shot-no-chemistry",
+        "episodes": 500,
+        "success_rate": 0.438,
+        "mean_censored_length": 14.648,
+        "mean_successful_length": 7.780821917808219,
+        "median_censored_length": 20.0,
+        "completion_fraction": {
+          "2": 0.09,
+          "8": 0.236,
+          "18": 0.432,
+          "20": 0.438
+        },
+        "success_ci95": [
+          0.39514834408666566,
+          0.48179707413056694
+        ]
+      },
+      "fine-tuned": {
+        "task": "D3O+",
+        "policy": "fine-tuned",
+        "episodes": 500,
+        "success_rate": 0.384,
+        "mean_censored_length": 14.714,
+        "mean_successful_length": 6.234375,
+        "median_censored_length": 20.0,
+        "completion_fraction": {
+          "2": 0.092,
+          "8": 0.284,
+          "18": 0.384,
+          "20": 0.384
+        },
+        "success_ci95": [
+          0.34240767461779237,
+          0.4273611723692879
+        ]
+      },
+      "scratch": {
+        "task": "D3O+",
+        "policy": "scratch",
+        "episodes": 500,
+        "success_rate": 0.236,
+        "mean_censored_length": 16.034,
+        "mean_successful_length": 3.194915254237288,
+        "median_censored_length": 20.0,
+        "completion_fraction": {
+          "2": 0.1,
+          "8": 0.236,
+          "18": 0.236,
+          "20": 0.236
+        },
+        "success_ci95": [
+          0.20088129547155886,
+          0.27514435629214073
+        ]
+      },
+      "joint": {
+        "task": "D3O+",
+        "policy": "joint",
+        "episodes": 500,
+        "success_rate": 0.196,
+        "mean_censored_length": 16.732,
+        "mean_successful_length": 3.326530612244898,
+        "median_censored_length": 20.0,
+        "completion_fraction": {
+          "2": 0.1,
+          "8": 0.19,
+          "18": 0.196,
+          "20": 0.196
+        },
+        "success_ci95": [
+          0.16357810661426447,
+          0.2330574923863593
+        ]
+      },
+      "sweeping": {
+        "task": "D3O+",
+        "policy": "sweeping",
+        "episodes": 500,
+        "success_rate": 0.004,
+        "mean_censored_length": 19.968,
+        "mean_successful_length": 12.0,
+        "median_censored_length": 20.0,
+        "completion_fraction": {
+          "2": 0.0,
+          "8": 0.002,
+          "18": 0.002,
+          "20": 0.004
+        },
+        "success_ci95": [
+          0.0010976305226827934,
+          0.014465715215177033
+        ]
+      },
+      "random": {
+        "task": "D3O+",
+        "policy": "random",
+        "episodes": 500,
+        "success_rate": 0.092,
+        "mean_censored_length": 19.15,
+        "mean_successful_length": 10.76086956521739,
+        "median_censored_length": 20.0,
+        "completion_fraction": {
+          "2": 0.008,
+          "8": 0.034,
+          "18": 0.086,
+          "20": 0.092
+        },
+        "success_ci95": [
+          0.06968272368045207,
+          0.12053873813617456
+        ]
+      }
+    }
+  },
+  "chemistry_embedding_names": [
+    "CaH+",
+    "MgH+",
+    "H3O+",
+    "D3O+"
+  ],
+  "chemistry_embedding_cosine": [
+    [
+      0.9999999999999998,
+      0.997803311947698,
+      0.9203521743140302,
+      0.8432400452411943
+    ],
+    [
+      0.997803311947698,
+      0.9999999999999999,
+      0.9285094063879095,
+      0.8427783987934016
+    ],
+    [
+      0.9203521743140302,
+      0.9285094063879095,
+      0.9999999999999998,
+      0.9006170737772508
+    ],
+    [
+      0.8432400452411943,
+      0.8427783987934016,
+      0.9006170737772508,
+      0.9999999999999999
+    ]
+  ],
+  "checkpoints": {
+    "source": "checkpoints/source_pretrained_CaH_H3O.pt",
+    "no_chemistry": "checkpoints/source_pretrained_no_chemistry.pt",
+    "fine_MgH+": "checkpoints/fine_tuned_MgHp.pt",
+    "scratch_MgH+": "checkpoints/scratch_MgHp.pt",
+    "fine_D3O+": "checkpoints/fine_tuned_D3Op.pt",
+    "scratch_D3O+": "checkpoints/scratch_D3Op.pt",
+    "joint": "checkpoints/joint_all_tasks.pt"
+  }
+}

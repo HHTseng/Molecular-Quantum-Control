@@ -1,12 +1,26 @@
-"""Optional exact branch-matrix preprocessing using QuTiP 5.x.
+"""Exact branch-matrix preprocessing using QuTiP.
 
-This implements the paper's physics-preprocessing prescription when the exact
-molecular Hamiltonian and pulse library are supplied.  The material builders in
-``materials.py`` do not call it because those unpublished inputs are absent.
+Use this module when the complete molecular Hamiltonian and pulse library are
+available.  It directly implements the physics-to-MDP reduction:
+
+    U_a = T exp[-(i/hbar) integral H_a(t) dt],
+
+    B[a,k]_{j i}
+        = sum_{n in N_k} |<j,n| U_a |i,0>|^2.
+
+The product basis is
+
+    |i,n> = |i>_mol tensor |n>_mot,
+
+where i labels a molecular internal eigenstate and n labels the selected shared
+motional normal mode.  Coherent amplitudes are retained during propagation and
+converted to population probabilities only after the pulse, when the motional
+measurement branches are constructed.
 """
-
 from __future__ import annotations
-from collections.abc import Callable, Sequence
+
+from collections.abc import Sequence
+
 import numpy as np
 
 
@@ -21,13 +35,31 @@ def build_branch_matrices_qutip(
     atol: float = 1e-8,
     rtol: float = 1e-6,
 ) -> np.ndarray:
-    """Solve ``U_a|i,0>`` and form the unnormalized branch maps (Sec. 3).
+    """Propagate every ``|i,0>`` input and construct ``B[a,k]``.
 
-    Specifically, ``B[a,k,j,i]=sum_(n in N_k)|<j,n|U_a|i,0>|^2``.
+    Parameters
+    ----------
+    molecular_dim:
+        Number N of retained molecular eigenstates.
+    motional_dim:
+        Number of Fock states ``|n>`` retained for the selected shared mode.
+    pulse_hamiltonians:
+        One QuTiP Hamiltonian per action.  Each item may be a ``Qobj``,
+        ``QobjEvo``, callable, or list-form time-dependent Hamiltonian accepted
+        by ``qutip.sesolve``.
+    pulse_durations_ms:
+        Pulse duration for each action in the same time unit used by the
+        Hamiltonian coefficients.
+    outcome_zero, outcome_one:
+        Sets of Fock numbers grouped into the binary detector results.  By
+        default, k=0 means n=0 and k=1 means any retained n>=1.
 
-    ``pulse_hamiltonians[a]`` may be a QuTiP Qobj, QobjEvo, or list-form
-    time-dependent Hamiltonian accepted by ``qutip.sesolve``.
+    Returns
+    -------
+    numpy.ndarray
+        Array of shape ``(A,2,N,N)`` with column-stochastic total probability.
     """
+
     try:
         import qutip as qt
     except ImportError as exc:
@@ -40,27 +72,59 @@ def build_branch_matrices_qutip(
     if len(pulse_hamiltonians) != len(pulse_durations_ms):
         raise ValueError("pulse count mismatch")
 
-    b = np.zeros((len(pulse_hamiltonians), 2, molecular_dim, molecular_dim), dtype=np.float64)
-    options = {"atol": atol, "rtol": rtol, "store_states": True}
+    branch_matrices = np.zeros(
+        (len(pulse_hamiltonians), 2, molecular_dim, molecular_dim),
+        dtype=np.float64,
+    )
+    options = {
+        "atol": atol,
+        "rtol": rtol,
+        "store_states": True,
+    }
 
-    for a, (hamiltonian, duration_ms) in enumerate(zip(pulse_hamiltonians, pulse_durations_ms)):
-        for i in range(molecular_dim):
+    for action, (hamiltonian, duration_ms) in enumerate(
+        zip(pulse_hamiltonians, pulse_durations_ms)
+    ):
+        for initial_molecular_state in range(molecular_dim):
+            # Initial shared motion is recooled to |0> before every RL step.
+            initial_joint_state = qt.tensor(
+                qt.basis(molecular_dim, initial_molecular_state),
+                qt.basis(motional_dim, 0),
+            )
 
-            # Start every coherent pulse in the cooled motional state |i> tensor |0>.
-            psi0 = qt.tensor(qt.basis(molecular_dim, i), qt.basis(motional_dim, 0))
-            result = qt.sesolve(hamiltonian, psi0, [0.0, float(duration_ms)], e_ops=[], options=options)
+            # Closed-system Schrodinger propagation under the selected pulse.
+            result = qt.sesolve(
+                hamiltonian,
+                initial_joint_state,
+                [0.0, float(duration_ms)],
+                e_ops=[],
+                options=options,
+            )
+            final_vector = result.states[-1].full().reshape(
+                molecular_dim,
+                motional_dim,
+            )
 
-            # Reshape amplitudes <j,n|psi_f>; coherence is retained until this point.
-            vector = result.states[-1].full().reshape(molecular_dim, motional_dim)
+            # Project onto each coarse-grained motional outcome and sum over
+            # unresolved Fock states.  The remaining axis labels final molecular
+            # state j, so these probabilities form one input column i.
+            for outcome, fock_numbers in enumerate(outcome_sets):
+                branch_matrices[
+                    action,
+                    outcome,
+                    :,
+                    initial_molecular_state,
+                ] = np.sum(
+                    np.abs(final_vector[:, list(fock_numbers)]) ** 2,
+                    axis=1,
+                )
 
-            for k, numbers in enumerate(outcome_sets):
-                # Project onto N_k, discard phase, and sum unresolved motional outcomes.
-                b[a, k, :, i] = np.sum(np.abs(vector[:, list(numbers)]) ** 2, axis=1)
+        # Numerical solvers may introduce tiny trace errors.  Normalize each
+        # input column after summing over final molecule and measurement result.
+        mass = branch_matrices[action].sum(axis=(0, 1))
+        branch_matrices[action] /= mass[None, None, :]
 
-        # Enforce sum_{k,j} B[a,k,j,i]=1 for every input basis state i.
-        mass = b[a].sum(axis=(0, 1))
-        b[a] /= mass[None, None, :]
-    return b.astype(np.float32)
+    return branch_matrices.astype(np.float32)
 
 
 __all__ = ["build_branch_matrices_qutip"]

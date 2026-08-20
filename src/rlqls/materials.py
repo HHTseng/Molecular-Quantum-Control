@@ -1,10 +1,21 @@
-"""Paper-informed CaH+ and H3O+ models.
+"""Paper-informed finite physics models for CaH+ and H3O+.
 
-The RL/control layer is paper-faithful.  The numerical physics layer is a
-transparent reconstruction because the authors do not publish the full
-pulse-conditioned transition matrices B[a,k].
+The RL and Gym layers operate only on branch matrices B[a,k].  This module
+constructs approximate material-specific matrices from the information that is
+available in the paper and supplement.
+
+Important limitation
+--------------------
+The authors do not publish the exact pulse-conditioned transition matrices or
+complete executable pulse library.  Therefore the builders below are explicit
+surrogates:
+
+* CaH+: a population-only directed-edge model reconstructed from Fig. S2.
+* H3O+: a local coherent rotating-frame model reconstructed from Tables S3-S4.
+
+Replace these builders with exact QuTiP-generated matrices when the full
+Hamiltonian, pulse definitions, and experimental calibration are available.
 """
-
 from __future__ import annotations
 
 from collections import defaultdict
@@ -16,12 +27,17 @@ from typing import Iterable, Sequence
 import numpy as np
 from scipy.linalg import expm
 
-from .model import BranchModel, Boltzmann_prob, branch_matrices_from_directed_edges
+from .model import (
+    BranchModel,
+    boltzmann_population,
+    branch_matrices_from_directed_edges,
+)
 
 
 @dataclass(frozen=True, slots=True)
 class H3OTransition:
-    """One tabulated Raman edge ``|i> <-> |f>`` with angular rate ``Omega_if``."""
+    """One tabulated two-photon molecular Raman transition."""
+
     index: int
     source: int
     target: int
@@ -39,10 +55,17 @@ class H3OTransition:
     xi_f: int
 
 
-def CaH16_surrogate(T: float = 300.0) -> BranchModel:
-    """Reconstruct the 16-state/13-action CaH+ example from Figs. 2(a), S2, S5.
-       ``T`` is the temperature in ``s_0,i proportional exp[-E_i/(k_B T)]``.
+def build_cah16_surrogate(temperature_kelvin: float = 300.0) -> BranchModel:
+    """Build the 16-state, 13-pulse CaH+ reduced model.
+
+    A directed edge ``i -> j`` represents the dominant blue-sideband process
+
+        |i, n=0> -> |j, n=1>.
+
+    The listed efficiency becomes ``B[a,1]_{j i}``; the remaining probability
+    stays in ``|i,0>`` and contributes to ``B[a,0]_{i i}``.
     """
+
     labels = [
         "I: |1,-1/2,+>",
         "II: |1,+1/2,+>",
@@ -61,14 +84,22 @@ def CaH16_surrogate(T: float = 300.0) -> BranchModel:
         "XV: |2,+1/2,->",
         "XVI: |2,+3/2,->",
     ]
+
     # Exact hyperfine energies are not tabulated.  The 0.57 THz rotational gap
-    # dominates; figure-scale offsets preserve ordering but barely affect 300 K.
+    # dominates the 300 K Boltzmann weights.  Figure-scale offsets preserve the
+    # ordering but are not a precision molecular Hamiltonian.
     energies = np.array(
         [0.0, 5.22, 10.44, 15.66, 20.88, 26.10]
-        + [570_000_000.0 + x for x in [0, 4.18, 8.36, 12.53, 16.71, 20.89, 25.07, 29.24, 33.42, 37.60]], dtype=np.float64,)
-    initial = Boltzmann_prob(energies, T)  # s_0 in Delta_15
-    # Blue box -> red box direction in Supplemental Fig. S2.  Dominant labelled
-    # efficiencies are retained; secondary efficiencies for pulses 3,4,9 are inferred.
+        + [
+            570_000_000.0 + x
+            for x in [0, 4.18, 8.36, 12.53, 16.71, 20.89, 25.07, 29.24, 33.42, 37.60]
+        ],
+        dtype=np.float64,
+    )
+    initial = boltzmann_population(energies, temperature_kelvin)
+
+    # Blue box -> red box direction in Supplemental Fig. S2.  A pulse may have
+    # more than one edge when degenerate transitions are driven together.
     edges: list[list[tuple[int, int, float]]] = [
         [(10, 9, 0.89)],
         [(9, 8, 0.99)],
@@ -84,23 +115,30 @@ def CaH16_surrogate(T: float = 300.0) -> BranchModel:
         [(11, 12, 1.00)],
         [(12, 11, 1.00)],
     ]
-    # Convert inferred transfers i->j into B[a,1,j,i]; no-detection mass is B[a,0].
     matrices = branch_matrices_from_directed_edges(16, edges)
-    frequencies = np.array([-1.72, -1.44, -1.03, -0.23, 4.40, 26.13, -6.12, -6.56, -7.33, 9.87, -9.87, 13.13, -13.13])
-    table_D = np.array([16.2, 34.6, 52.6, 18.7, 28.5, 29.7, 16.6, 56.2, 23.7, 16.8, 16.8, 18.8, 18.8])
+
+    frequencies = np.array(
+        [-1.72, -1.44, -1.03, -0.23, 4.40, 26.13, -6.12, -6.56, -7.33, 9.87, -9.87, 13.13, -13.13]
+    )
+    table_D = np.array(
+        [16.2, 34.6, 52.6, 18.7, 28.5, 29.7, 16.6, 56.2, 23.7, 16.8, 16.8, 18.8, 18.8]
+    )
 
     return BranchModel(
         branch_matrices=matrices,
         initial_population=initial,
         energies_over_h_khz=energies,
         state_labels=labels,
-        action_labels=[f"CaH+ pulse {a+1}: detuning={frequencies[a]:.2f} kHz" for a in range(13)],
+        action_labels=[
+            f"CaH+ pulse {a + 1}: detuning={frequencies[a]:.2f} kHz"
+            for a in range(13)
+        ],
         durations_ms=table_D / (2 * np.pi),
         metadata={
             "material": "CaH+",
             "paper_states": 16,
             "paper_actions": 13,
-            "temperature_kelvin": T,
+            "temperature_kelvin": temperature_kelvin,
             "sweeping_order": list(range(13)),
             "model_kind": "dominant-edge surrogate",
             "uncertainties": [
@@ -113,19 +151,27 @@ def CaH16_surrogate(T: float = 300.0) -> BranchModel:
     )
 
 
-def _load_H3O(data_dir: Path) -> tuple[np.ndarray, list[str], list[H3OTransition]]:
-    """Load molecular energies ``E_i/h`` and candidate Raman couplings."""
+def _load_h3o(
+    data_dir: Path,
+) -> tuple[np.ndarray, list[str], list[H3OTransition]]:
+    """Load the 130 energy levels and 371 tabulated Raman transitions."""
+
     energies: list[float] = []
     labels: list[str] = []
-    with (data_dir / "H3O_states.csv").open(newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
+    with (data_dir / "h3o_states.csv").open(newline="", encoding="utf-8") as file:
+        for row in csv.DictReader(file):
             energies.append(float(row["energy_over_h_khz"]))
             labels.append(
-                f"|J={row['J']},K={row['K']},p={row['parity']},mF={row['mF']},xi={row['xi']}>"
+                f"|J={row['J']},K={row['K']},p={row['parity']},"
+                f"mF={row['mF']},xi={row['xi']}>"
             )
+
     transitions: list[H3OTransition] = []
-    with (data_dir / "H3O_raman_transitions.csv").open(newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
+    with (data_dir / "h3o_raman_transitions.csv").open(
+        newline="",
+        encoding="utf-8",
+    ) as file:
+        for row in csv.DictReader(file):
             transitions.append(
                 H3OTransition(
                     index=int(row["transition_id"]),
@@ -145,6 +191,7 @@ def _load_H3O(data_dir: Path) -> tuple[np.ndarray, list[str], list[H3OTransition
                     xi_f=int(row["xi_f"]),
                 )
             )
+
     if len(energies) != 130 or len(transitions) != 371:
         raise RuntimeError(
             f"expected paper tables 130/371; found {len(energies)}/{len(transitions)}"
@@ -152,38 +199,53 @@ def _load_H3O(data_dir: Path) -> tuple[np.ndarray, list[str], list[H3OTransition
     return np.asarray(energies), labels, transitions
 
 
-def _cluster(transitions: Iterable[H3OTransition], cutoff: float, tolerance: float):
-    """Infer pulse actions by clustering near-degenerate transition frequencies."""
+def _cluster(
+    transitions: Iterable[H3OTransition],
+    cutoff: float,
+    tolerance: float,
+) -> list[list[H3OTransition]]:
+    """Infer pulse groups by adjacent transition-frequency clustering.
+
+    This is a reconstruction heuristic, not a pulse-grouping rule stated by
+    the paper.  The default tolerance was selected because it yields 218 groups,
+    matching the reported H3O+ action count.
+    """
+
     ordered = sorted(
-        (t for t in transitions if t.rabi_over_2pi_khz >= cutoff), key=lambda t: t.frequency_khz
+        (t for t in transitions if t.rabi_over_2pi_khz >= cutoff),
+        key=lambda t: t.frequency_khz,
     )
     clusters: list[list[H3OTransition]] = []
-    for t in ordered:
-        if not clusters or t.frequency_khz - clusters[-1][-1].frequency_khz > tolerance:
-            clusters.append([t])
+    for transition in ordered:
+        if (
+            not clusters
+            or transition.frequency_khz - clusters[-1][-1].frequency_khz > tolerance
+        ):
+            clusters.append([transition])
         else:
-            clusters[-1].append(t)
+            clusters[-1].append(transition)
     return clusters
 
 
 class _UnionFind:
-    """Find connected coherent subspaces of basis nodes ``(molecular state,n)``."""
-    def __init__(self):
-        self.parent: dict[tuple[str, int], tuple[str, int]] = {}
+    """Group product states |i,n> connected by the same local pulse model."""
 
-    def find(self, x):
+    def __init__(self) -> None:
+        self.parent: dict[tuple[int, int], tuple[int, int]] = {}
+
+    def find(self, x: tuple[int, int]) -> tuple[int, int]:
         self.parent.setdefault(x, x)
         if self.parent[x] != x:
             self.parent[x] = self.find(self.parent[x])
         return self.parent[x]
 
-    def union(self, x, y):
-        rx, ry = self.find(x), self.find(y)
-        if rx != ry:
-            self.parent[ry] = rx
+    def union(self, x: tuple[int, int], y: tuple[int, int]) -> None:
+        root_x, root_y = self.find(x), self.find(y)
+        if root_x != root_y:
+            self.parent[root_y] = root_x
 
-    def components(self):
-        groups: dict[tuple[str, int], set[tuple[str, int]]] = defaultdict(set)
+    def components(self) -> list[set[tuple[int, int]]]:
+        groups: dict[tuple[int, int], set[tuple[int, int]]] = defaultdict(set)
         for x in list(self.parent):
             groups[self.find(x)].add(x)
         return list(groups.values())
@@ -198,71 +260,124 @@ def _coherent_motional_map(
     transitions: Sequence[H3OTransition],
     motional_dim: int = 4,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Local coherent blue-sideband propagation with ``n=0,...,motional_dim-1``.
+    """Propagate a local blue-sideband Hamiltonian in the |i,n> basis.
 
-    The rotating-frame basis is ``|s,n>`` with diagonal angular frequency
-    ``2*pi*(E_s/h - n*nu_a)`` (a common reference is removed).  Every tabulated
-    molecular edge couples
+    Product basis
+    -------------
+    ``(state,n)`` represents
+
+        |state,n> = |state>_mol tensor |n>_mot.
+
+    For every candidate molecular transition i -> f, the blue-sideband term
+    couples
 
         |i,n> <-> |f,n+1>
 
-    with matrix element ``(eta*Omega_if/2)*sqrt(n+1)``.  Evolution is
-    ``U_a=exp(-i H_a tau_a)``.  The final measurement
-    branches are ``k=0`` for ``n=0`` and ``k=1`` for all ``n>=1``.
+    with matrix element
+
+        (eta Omega_if / 2) sqrt(n+1).
+
+    Since ``rabi_over_2pi_khz = Omega_if/(2 pi)`` and time is measured in ms,
+    the angular-frequency matrix element used below is
+
+        pi eta [Omega_if/(2 pi)] sqrt(n+1).
+
+    Measurement coarse graining
+    ----------------------------
+    The final population is assigned to branch k=0 when n=0 and branch k=1
+    when n>=1.  The code sums probabilities over unresolved motional states,
+    matching the paper's binary readout approximation.
     """
+
     if motional_dim < 2:
         raise ValueError("motional_dim must be at least 2")
-    b0 = np.eye(n_states, dtype=np.float64)
-    b1 = np.zeros((n_states, n_states), dtype=np.float64)
+
+    # Default for molecular states untouched by the local pulse window:
+    # remain in the n=0 branch.
+    branch_zero = np.eye(n_states, dtype=np.float64)
+    branch_one = np.zeros((n_states, n_states), dtype=np.float64)
     if not transitions:
-        return b0, b1
-    uf = _UnionFind()
-    for t in transitions:
+        return branch_zero, branch_one
+
+    # Split the Hamiltonian into connected blocks to avoid exponentiating the
+    # full 130*motional_dim matrix for every inferred pulse.
+    union_find = _UnionFind()
+    for transition in transitions:
         for n in range(motional_dim - 1):
-            uf.union((t.source, n), (t.target, n + 1))
-    edges_by_root: dict[tuple[int, int], list[tuple[H3OTransition, int]]] = defaultdict(list)
-    for t in transitions:
+            union_find.union(
+                (transition.source, n),
+                (transition.target, n + 1),
+            )
+
+    edges_by_root: dict[
+        tuple[int, int],
+        list[tuple[H3OTransition, int]],
+    ] = defaultdict(list)
+    for transition in transitions:
         for n in range(motional_dim - 1):
-            edges_by_root[uf.find((t.source, n))].append((t, n))
-    for component in uf.components():
-        root = uf.find(next(iter(component)))
+            root = union_find.find((transition.source, n))
+            edges_by_root[root].append((transition, n))
+
+    for component in union_find.components():
+        root = union_find.find(next(iter(component)))
         edges = edges_by_root[root]
         nodes = sorted(component, key=lambda x: (x[1], x[0]))
-        position = {node: p for p, node in enumerate(nodes)}
-        # Rotating-frame Hamiltonian H_a/hbar in angular kHz; common energy is removed.
-        h = np.zeros((len(nodes), len(nodes)), dtype=np.complex128)
-        reference = float(energies[nodes[0][0]] - nodes[0][1] * pulse_frequency_khz)
-        for (state, n), pos in position.items():
-            h[pos, pos] = 2 * np.pi * (energies[state] - n * pulse_frequency_khz - reference)
-        for t, n in edges:
-            left = position[(t.source, n)]
-            right = position[(t.target, n + 1)]
-            # eta*Omega_if/2 * sqrt(n+1), with Omega_if=2*pi*(table rate).
-            coupling = np.pi * lamb_dicke * t.rabi_over_2pi_khz * np.sqrt(n + 1.0)
-            h[right, left] += coupling
-            h[left, right] += coupling
-        u = expm(-1j * h * duration_ms)  # U_a(tau_a)
+        position = {node: index for index, node in enumerate(nodes)}
+
+        # Rotating-frame Hamiltonian in angular kHz.  The common reference only
+        # removes a global phase and has no effect on transition probabilities.
+        hamiltonian = np.zeros((len(nodes), len(nodes)), dtype=np.complex128)
+        reference = float(
+            energies[nodes[0][0]] - nodes[0][1] * pulse_frequency_khz
+        )
+        for (state, n), position_index in position.items():
+            hamiltonian[position_index, position_index] = 2 * np.pi * (
+                energies[state]
+                - n * pulse_frequency_khz
+                - reference
+            )
+
+        for transition, n in edges:
+            left = position[(transition.source, n)]
+            right = position[(transition.target, n + 1)]
+            coupling = (
+                np.pi
+                * lamb_dicke
+                * transition.rabi_over_2pi_khz
+                * np.sqrt(n + 1.0)
+            )
+            hamiltonian[right, left] += coupling
+            hamiltonian[left, right] += coupling
+
+        # U_a = exp(-i H_a tau_a) for this time-independent rotating-frame
+        # surrogate.  Exact time-dependent pulses would instead use QuTiP.
+        unitary = expm(-1j * hamiltonian * duration_ms)
+
         initial_sources = sorted(state for state, n in component if n == 0)
         for source in initial_sources:
-            col = position[(source, 0)]
-            b0[:, source] = 0.0
-            b1[:, source] = 0.0
-            for (dest, n), row in position.items():
-                probability = abs(u[row, col]) ** 2  # |<dest,n|U_a|source,0>|^2
+            initial_column = position[(source, 0)]
+            branch_zero[:, source] = 0.0
+            branch_one[:, source] = 0.0
+
+            # Project U_a |source,0> onto all |dest,n>.  Phases are discarded
+            # only after the coherent propagation, when constructing the
+            # population-level measurement branches.
+            for (destination, n), row in position.items():
+                probability = abs(unitary[row, initial_column]) ** 2
                 if n == 0:
-                    b0[dest, source] += probability
+                    branch_zero[destination, source] += probability
                 else:
-                    b1[dest, source] += probability
-    b0 = np.clip(b0.real, 0, None)
-    b1 = np.clip(b1.real, 0, None)
-    # Trace preservation for each source i: sum_{k,j} B[k,j,i]=1.
-    mass = b0.sum(axis=0) + b1.sum(axis=0)
-    b0 /= mass[None, :]
-    b1 /= mass[None, :]
-    return b0, b1
+                    branch_one[destination, source] += probability
+
+    branch_zero = np.clip(branch_zero.real, 0.0, None)
+    branch_one = np.clip(branch_one.real, 0.0, None)
+    mass = branch_zero.sum(axis=0) + branch_one.sum(axis=0)
+    branch_zero /= mass[None, :]
+    branch_one /= mass[None, :]
+    return branch_zero, branch_one
 
 
-def H3O_130_surrogate(
+def build_h3o130_surrogate(
     data_dir: str | Path,
     *,
     temperature_kelvin: float = 20.0,
@@ -274,45 +389,86 @@ def H3O_130_surrogate(
     motional_dim: int = 4,
     pulse_rule: str = "strongest",
 ) -> BranchModel:
-    """Reconstruct a 130-state/218-action H3O+ model from Tables S3--S4.
+    """Build the inferred 130-state, 218-pulse H3O+ surrogate.
 
-    The 0.43 kHz adjacent-frequency clustering is selected because it yields
-    218 groups.  It is not stated by the paper and is explicitly an inference.
+    For each inferred pulse:
+
+    1. select a pulse center frequency and approximate pi-pulse duration;
+    2. collect nearby tabulated Raman transitions;
+    3. exponentiate a coherent blue-sideband Hamiltonian in |i,n>;
+    4. project final populations into k=0 and k=1 branch matrices.
+
+    The 0.43 kHz clustering and pulse construction are assumptions required by
+    missing public inputs, not claims about the authors' exact implementation.
     """
+
     data_dir = Path(data_dir)
-    energies, labels, transitions = _load_H3O(data_dir)
-    clusters = _cluster(transitions, rate_cutoff_over_2pi_khz, cluster_tolerance_khz)
+    energies, labels, transitions = _load_h3o(data_dir)
+    clusters = _cluster(
+        transitions,
+        rate_cutoff_over_2pi_khz,
+        cluster_tolerance_khz,
+    )
     if len(clusters) != 218:
         raise RuntimeError(f"inferred action count {len(clusters)} != 218")
-    initial = Boltzmann_prob(energies, temperature_kelvin)
+
+    initial = boltzmann_population(energies, temperature_kelvin)
     matrices = np.zeros((218, 2, 130, 130), dtype=np.float32)
-    durations = []
-    action_labels = []
-    cluster_sizes = []
-    local_sizes = []
-    candidates = [t for t in transitions if t.rabi_over_2pi_khz >= off_resonant_cutoff_over_2pi_khz]
-    for a, group in enumerate(clusters):
+    durations: list[float] = []
+    action_labels: list[str] = []
+    cluster_sizes: list[int] = []
+    local_sizes: list[int] = []
+
+    candidates = [
+        transition
+        for transition in transitions
+        if transition.rabi_over_2pi_khz >= off_resonant_cutoff_over_2pi_khz
+    ]
+
+    for action, group in enumerate(clusters):
         if pulse_rule == "strongest":
             target = max(group, key=lambda t: t.rabi_over_2pi_khz)
             frequency = float(target.frequency_khz)
-            # Blue-sideband pi time: tau_pi=pi/(eta*Omega)=1/(2 eta Omega/2pi).
-            duration = float(1 / (2 * lamb_dicke * target.rabi_over_2pi_khz))
+
+            # For n=0, Omega_BSB = eta Omega.  A pi pulse obeys
+            # eta Omega tau = pi, hence tau = 1/[2 eta Omega/(2 pi)].
+            duration = float(
+                1.0 / (2.0 * lamb_dicke * target.rabi_over_2pi_khz)
+            )
         elif pulse_rule == "cluster_median":
             frequency = float(np.mean([t.frequency_khz for t in group]))
-            pi_times = [1 / (2 * lamb_dicke * t.rabi_over_2pi_khz) for t in group]
+            pi_times = [
+                1.0 / (2.0 * lamb_dicke * t.rabi_over_2pi_khz)
+                for t in group
+            ]
             duration = float(np.median(pi_times))
         else:
             raise ValueError("pulse_rule must be 'strongest' or 'cluster_median'")
-        local = [t for t in candidates if abs(t.frequency_khz - frequency) <= drive_window_khz]
-        b0, b1 = _coherent_motional_map(
-            130, energies, frequency, duration, lamb_dicke, local, motional_dim=motional_dim
+
+        local = [
+            transition
+            for transition in candidates
+            if abs(transition.frequency_khz - frequency) <= drive_window_khz
+        ]
+        branch_zero, branch_one = _coherent_motional_map(
+            n_states=130,
+            energies=energies,
+            pulse_frequency_khz=frequency,
+            duration_ms=duration,
+            lamb_dicke=lamb_dicke,
+            transitions=local,
+            motional_dim=motional_dim,
         )
-        matrices[a, 0] = b0
-        matrices[a, 1] = b1
+
+        matrices[action, 0] = branch_zero
+        matrices[action, 1] = branch_one
         durations.append(duration)
         cluster_sizes.append(len(group))
         local_sizes.append(len(local))
-        action_labels.append(f"H3O+ inferred pulse {a+1}: nu={frequency:.6f} kHz")
+        action_labels.append(
+            f"H3O+ inferred pulse {action + 1}: nu={frequency:.6f} kHz"
+        )
+
     return BranchModel(
         branch_matrices=matrices,
         initial_population=initial,
@@ -347,4 +503,4 @@ def H3O_130_surrogate(
     )
 
 
-__all__ = ["CaH16_surrogate", "H3O_130_surrogate", "H3OTransition"]
+__all__ = ["build_cah16_surrogate", "build_h3o130_surrogate", "H3OTransition"]
