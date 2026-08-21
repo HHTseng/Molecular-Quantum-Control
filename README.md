@@ -142,6 +142,76 @@ PYTHONPATH=src python scripts/validate_transfer_suite.py \
 - `src/rlqls/multitask/qmdp.py`: heterogeneous expected-branch target.
 - `src/rlqls/multitask/trainer.py`: shared Double-DQN/qMDP training.
 
+## Multi-task training and transfer results
+
+The supplied validation run pretrained one shared controller for 240 episodes on
+CaH$^+$ and H$_3$O$^+$ using the schedule
+`(CaH+, CaH+, CaH+, H3O+)`. It then evaluated direct transfer to held-out
+related tasks and compared 60 target-training episodes of fine-tuning with the
+same 60-episode budget from scratch. A separate joint reference used 160
+episodes across all four tasks. Every policy/task entry below was evaluated
+with 500 Monte Carlo episodes.
+
+### Source-task check
+
+| Source task | Success rate | Mean censored steps |
+|---|---:|---:|
+| CaH$^+$ | 100.0% | 9.22 |
+| H$_3$O$^+$ | 71.4% | 11.62 |
+
+These results show that one masked GNN policy can be trained across the very
+different source dimensions (16 states/13 actions and 130 states/218 actions).
+They are a multi-task implementation check rather than a comparison against
+separately optimized specialist networks.
+
+### Held-out related-task transfer
+
+| Target | Policy | Success rate [95% CI] | Mean censored steps |
+|---|---|---:|---:|
+| MgH$^+$ | zero-shot | 58.8% [54.4, 63.0] | 15.38 |
+| MgH$^+$ | zero-shot, no chemistry | 49.6% [45.2, 54.0] | 15.95 |
+| MgH$^+$ | fine-tuned | 96.2% [94.1, 97.6] | 9.91 |
+| MgH$^+$ | scratch | 0.0% [0.0, 0.8] | 25.00 |
+| MgH$^+$ | joint | 18.0% [14.9, 21.6] | 21.55 |
+| MgH$^+$ | sweeping | 93.8% [91.3, 95.6] | 9.38 |
+| MgH$^+$ | random | 67.0% [62.8, 71.0] | 15.33 |
+| D$_3$O$^+$ | zero-shot | 35.4% [31.3, 39.7] | 15.31 |
+| D$_3$O$^+$ | zero-shot, no chemistry | 43.8% [39.5, 48.2] | 14.65 |
+| D$_3$O$^+$ | fine-tuned | 38.4% [34.2, 42.7] | 14.71 |
+| D$_3$O$^+$ | scratch | 23.6% [20.1, 27.5] | 16.03 |
+| D$_3$O$^+$ | joint | 19.6% [16.4, 23.3] | 16.73 |
+| D$_3$O$^+$ | sweeping | 0.4% [0.1, 1.4] | 19.97 |
+| D$_3$O$^+$ | random | 9.2% [7.0, 12.1] | 19.15 |
+
+![Held-out transfer success rates](results/multimolecule_transfer_final/figures/transfer_success_rate.png)
+
+The clearest result is MgH$^+$ adaptation: source initialization followed by
+60 target episodes reaches 96.2% success, while the equal-budget scratch run
+does not complete an episode. D$_3$O$^+$ transfer is positive but smaller:
+fine-tuning reaches 38.4%, compared with 23.6% from scratch. Lower moving mean
+episode length is better in the adaptation curves below.
+
+<p align="center">
+  <img src="results/multimolecule_transfer_final/figures/MgHp_adaptation.png" width="49%" alt="MgH+ fine-tuning and scratch adaptation curves">
+  <img src="results/multimolecule_transfer_final/figures/D3Op_adaptation.png" width="49%" alt="D3O+ fine-tuning and scratch adaptation curves">
+</p>
+
+The zero-shot comparison is not uniformly favorable: it is stronger than
+random and sweeping for D$_3$O$^+$, but weaker than both baselines for MgH$^+$.
+The chemistry ablation is also mixed, improving MgH$^+$ zero-shot success by
+9.2 percentage points but reducing D$_3$O$^+$ success by 8.4 points. Thus the
+experiment supports reusable initialization and efficient fine-tuning, but it
+does not yet establish a general chemistry-representation benefit. The weak
+joint-policy result is consistent with task interference or an insufficient
+equal-per-task update budget.
+
+These comparisons use one training seed. The intervals describe rollout
+uncertainty only, not training-seed variance. Moreover, MgH$^+$ and D$_3$O$^+$
+are controlled deformations of the source branch maps with constructed action
+correspondences, and the pulse descriptors include branch-map summaries. See
+the [full transfer report](results/multimolecule_transfer_final/TRANSFER_RESULTS.md)
+for the complete protocol, completion curves, and limitations.
+
 ## Walkthrough and results
 
 - [`MULTI_MOLECULE_GNN_RLQLS_WALKTHROUGH.md`](MULTI_MOLECULE_GNN_RLQLS_WALKTHROUGH.md): detailed code and mathematical walkthrough.
